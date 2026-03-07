@@ -1,0 +1,28 @@
+{
+  "name": "task-reward-backend",
+  "version": "1.0.0",
+  "description": "任务返现平台后端API - Vercel Serverless",
+  "main": "index.js",
+  "scripts": {
+    "dev": "vercel dev",
+    "deploy": "vercel --prod",
+    "test": "node server-local.js"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.470.0",
+    "axios": "^1.6.2",
+    "bcryptjs": "^2.4.3",
+    "busboy": "^1.6.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2",
+    "jsonwebtoken": "^9.0.2",
+    "multer": "^1.4.5-lts.1",
+    "mysql2": "^3.6.5",
+    "better-sqlite3": "^9.2.2",
+    "uuid": "^9.0.1"
+  },
+  "devDependencies": {
+    "vercel": "^33.0.1"
+  }
+}
