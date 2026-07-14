@@ -1,6 +1,11 @@
-// 获取任务列表
 const db = require('../../lib/db');
 const { success, error } = require('../../lib/response');
+const { normalizePagination, parsePositiveInt } = require('../../lib/pagination');
+
+const normalizePlatform = (value) => {
+  const platforms = ['douyin', 'xiaohongshu', 'taobao', 'jd'];
+  return platforms.includes(value) ? value : 'taobao';
+};
 
 module.exports = async (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -16,43 +21,51 @@ module.exports = async (req, res) => {
   }
 
   try {
-    const { page = 1, page_size = 10, status = 1 } = req.query;
-    const offset = (parseInt(page) - 1) * parseInt(page_size);
-
-    // 获取总数
-    const countResult = await db.queryOne(
-      `SELECT COUNT(*) as total FROM tasks
-       WHERE status = ? AND remaining_quota > 0
-       AND (start_time IS NULL OR start_time <= NOW())
-       AND (end_time IS NULL OR end_time >= NOW())`,
-      [status]
+    const { page, page_size, status = 1, platform } = req.query;
+    const { page: currentPage, pageSize, offset } = normalizePagination(
+      { page, page_size },
+      { defaultPageSize: 10, maxPageSize: 50 }
     );
 
-    // 获取列表
+    let whereClause = 'WHERE status = ? AND remaining_quota > 0';
+    const params = [parsePositiveInt(status, 1)];
+
+    if (platform) {
+      whereClause += ' AND platform = ?';
+      params.push(normalizePlatform(platform));
+    }
+
+    whereClause += ' AND (start_time IS NULL OR start_time <= NOW())';
+    whereClause += ' AND (end_time IS NULL OR end_time >= NOW())';
+
+    const countResult = await db.queryOne(
+      `SELECT COUNT(*) as total FROM tasks ${whereClause}`,
+      params
+    );
+
     const tasks = await db.query(
-      `SELECT id, title, description, reward_amount, total_quota, remaining_quota,
+      `SELECT id, platform, title, description, reward_amount, total_quota, remaining_quota,
               status, created_at
        FROM tasks
-       WHERE status = ? AND remaining_quota > 0
-       AND (start_time IS NULL OR start_time <= NOW())
-       AND (end_time IS NULL OR end_time >= NOW())
+       ${whereClause}
        ORDER BY created_at DESC
        LIMIT ? OFFSET ?`,
-      [status, parseInt(page_size), offset]
+      [...params, pageSize, offset]
     );
 
     res.json(success({
-      total: countResult.total,
-      page: parseInt(page),
-      page_size: parseInt(page_size),
+      total: countResult?.total || 0,
+      page: currentPage,
+      page_size: pageSize,
       list: tasks.map(task => ({
         id: task.id,
+        platform: normalizePlatform(task.platform),
         title: task.title,
         description: task.description,
         reward_amount: parseFloat(task.reward_amount),
         total_quota: task.total_quota,
         remaining_quota: task.remaining_quota,
-        status: task.status,
+        status: parsePositiveInt(task.status, 1),
         created_at: task.created_at
       }))
     }));

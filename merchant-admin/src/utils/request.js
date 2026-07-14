@@ -8,39 +8,49 @@ const request = axios.create({
   timeout: 10000
 })
 
-// 请求拦截器
+const withQueryParams = (config) => {
+  if ((config.method || 'get').toLowerCase() !== 'get') {
+    return config
+  }
+
+  if (config.params && Object.keys(config.params).length > 0) {
+    config.params = {
+      ...config.params
+    }
+  }
+
+  return config
+}
+
 request.interceptors.request.use(
   (config) => {
     const authStore = useAuthStore()
     if (authStore.token) {
       config.headers.Authorization = `Bearer ${authStore.token}`
     }
-    return config
+    return withQueryParams(config)
   },
-  (error) => {
-    return Promise.reject(error)
-  }
+  (error) => Promise.reject(error)
 )
 
-// 响应拦截器
 request.interceptors.response.use(
   (response) => {
     const res = response.data
     if (res.code === 0) {
       return res.data
-    } else {
-      ElMessage.error(res.message || '请求失败')
-      return Promise.reject(new Error(res.message || '请求失败'))
     }
+
+    ElMessage.error(res.message || 'Request failed')
+    return Promise.reject(new Error(res.message || 'Request failed'))
   },
   (error) => {
     if (error.response?.status === 401) {
       const authStore = useAuthStore()
       authStore.logout()
       router.push('/login')
-      ElMessage.error('登录已过期，请重新登录')
+      ElMessage.error('Login expired, please sign in again')
     } else {
-      ElMessage.error(error.message || '网络错误')
+      ElMessage.error(error.message || 'Network error')
     }
     return Promise.reject(error)
   }

@@ -1,7 +1,7 @@
-// 审核任务提交
 const db = require('../../../lib/db');
 const { authenticateMerchant } = require('../../../lib/auth');
 const { success, error, ErrorCodes } = require('../../../lib/response');
+const { parsePositiveInt } = require('../../../lib/pagination');
 
 module.exports = async (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -17,66 +17,78 @@ module.exports = async (req, res) => {
   }
 
   try {
-    // 认证
     const auth = await authenticateMerchant(req, res);
     if (auth.error) {
       return res.status(auth.status).json(error(auth.error.code, auth.error.message));
     }
 
     const merchantId = auth.merchant.id;
-    const { id } = req.query; // 提交记录ID
-    const { status, reject_reason } = req.body;
+    const id = req.query.id ?? req.body.id ?? req.body.submission_id;
+    const reviewStatus = parsePositiveInt(req.body.review_status ?? req.body.status, NaN);
+    const rejectReason = (req.body.reject_reason ?? req.body.review_note ?? '').trim();
 
-    if (!id || status === undefined) {
-      return res.status(400).json(error(ErrorCodes.PARAM_ERROR, '缺少必填参数'));
+    if (!id || Number.isNaN(reviewStatus)) {
+      return res.status(400).json(error(ErrorCodes.PARAM_ERROR, '缺少必要参数'));
     }
 
-    if (![1, 2].includes(parseInt(status))) {
+    if (![1, 2].includes(reviewStatus)) {
       return res.status(400).json(error(ErrorCodes.PARAM_ERROR, '状态值无效'));
     }
 
-    if (parseInt(status) === 2 && !reject_reason) {
-      return res.status(400).json(error(ErrorCodes.PARAM_ERROR, '拒绝时必须填写原因'));
+    if (reviewStatus === 2 && !rejectReason) {
+      return res.status(400).json(error(ErrorCodes.PARAM_ERROR, '驳回时必须填写原因'));
     }
 
-    // 使用事务
     await db.transaction(async (connection) => {
-      // 1. 查找提交记录
-      const [submissions] = await connection.query(
-        `SELECT s.*, t.merchant_id, t.remaining_quota
+      const [rows] = await connection.query(
+        `SELECT s.*, t.merchant_id
          FROM submissions s
          JOIN tasks t ON s.task_id = t.id
          WHERE s.id = ? FOR UPDATE`,
         [id]
       );
 
-      const submission = submissions[0];
+      const submission = rows[0];
       if (!submission) {
-        throw new Error('提交记录不存在');
+        throw new Error('submission_not_found');
       }
 
-      // 2. 验证权限
       if (submission.merchant_id !== merchantId) {
-        throw new Error('无权限审核');
+        throw new Error('permission_denied');
       }
 
-      if (submission.status !== 0) {
-        throw new Error('该提交已审核');
+      if (parsePositiveInt(submission.status, 0) !== 0) {
+        throw new Error('submission_reviewed');
       }
 
-      // 3. 更新提交状态
-      await connection.query(
+      const [updateResult] = await connection.query(
         `UPDATE submissions
          SET status = ?, reject_reason = ?, reviewed_at = NOW(), updated_at = NOW()
-         WHERE id = ?`,
-        [parseInt(status), reject_reason || null, id]
+         WHERE id = ? AND status = 0`,
+        [reviewStatus, rejectReason || null, id]
       );
 
-      // 4. 如果通过，发放奖励
-      if (parseInt(status) === 1) {
-        const rewardAmount = parseFloat(submission.reward_amount);
+      if (!updateResult.affectedRows) {
+        throw new Error('submission_reviewed');
+      }
 
-        // 更新用户余额
+      if (reviewStatus === 1) {
+        const rewardAmount = parseFloat(submission.reward_amount || 0);
+
+        const [userRows] = await connection.query(
+          `SELECT id, available_balance
+           FROM users
+           WHERE id = ? FOR UPDATE`,
+          [submission.user_id]
+        );
+
+        const user = userRows[0];
+        if (!user) {
+          throw new Error('user_not_found');
+        }
+
+        const balanceAfter = parseFloat(user.available_balance || 0) + rewardAmount;
+
         await connection.query(
           `UPDATE users
            SET total_earnings = total_earnings + ?,
@@ -86,44 +98,61 @@ module.exports = async (req, res) => {
           [rewardAmount, rewardAmount, submission.user_id]
         );
 
-        // 获取更新后的余额
-        const [users] = await connection.query(
-          'SELECT available_balance FROM users WHERE id = ?',
-          [submission.user_id]
-        );
-
-        // 创建收益记录
         await connection.query(
           `INSERT INTO earnings
            (user_id, submission_id, type, amount, balance_after, description, created_at)
            VALUES (?, ?, 1, ?, ?, ?, NOW())`,
-          [submission.user_id, id, rewardAmount, users[0].available_balance,
-           `任务奖励：${submission.task_id}`]
+          [submission.user_id, id, rewardAmount, balanceAfter, `任务返现 - ${submission.task_id}`]
         );
-      }
-      // 5. 如果拒绝，恢复任务名额
-      else if (parseInt(status) === 2) {
+      } else {
         await connection.query(
           'UPDATE tasks SET remaining_quota = remaining_quota + 1 WHERE id = ?',
           [submission.task_id]
         );
       }
+
+      try {
+        await connection.query(
+          `INSERT INTO audit_logs
+           (operator_type, operator_id, action, target_type, target_id, summary, detail, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, NOW())`,
+          [
+            'merchant',
+            merchantId,
+            'submission_review',
+            'submission',
+            id,
+            reviewStatus === 1 ? '审核通过提交' : '审核驳回提交',
+            JSON.stringify({
+              review_status: reviewStatus,
+              task_id: submission.task_id,
+              user_id: submission.user_id,
+              reward_amount: submission.reward_amount
+            })
+          ]
+        );
+      } catch (logErr) {
+        console.error('Write audit log failed:', logErr);
+      }
     });
 
-    res.json(success(null, '审核成功'));
+    return res.json(success(null, '审核成功'));
   } catch (err) {
     console.error('Review submission error:', err);
 
-    if (err.message === '提交记录不存在') {
-      return res.status(404).json(error(ErrorCodes.TASK_NOT_FOUND, err.message));
+    if (err.message === 'submission_not_found') {
+      return res.status(404).json(error(ErrorCodes.TASK_NOT_FOUND, '提交记录不存在'));
     }
-    if (err.message === '无权限审核') {
-      return res.status(403).json(error(ErrorCodes.NO_PERMISSION, err.message));
+    if (err.message === 'permission_denied') {
+      return res.status(403).json(error(ErrorCodes.NO_PERMISSION, '无权审核该提交'));
     }
-    if (err.message === '该提交已审核') {
-      return res.status(400).json(error(ErrorCodes.REVIEW_FAILED, err.message));
+    if (err.message === 'submission_reviewed') {
+      return res.status(400).json(error(ErrorCodes.REVIEW_FAILED, '该提交已审核'));
+    }
+    if (err.message === 'user_not_found') {
+      return res.status(404).json(error(ErrorCodes.USER_NOT_FOUND, '用户不存在'));
     }
 
-    res.status(500).json(error(500, '服务器错误'));
+    return res.status(500).json(error(500, '服务器错误'));
   }
 };

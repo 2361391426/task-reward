@@ -1,30 +1,42 @@
-// 图片上传工具
-const UPLOAD_URL = 'https://your-api-domain.com/api/upload'
+// Image upload helper
+const UPLOAD_URL = import.meta.env.VITE_UPLOAD_URL || import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001/api/upload'
 
-/**
- * 上传图片
- * @param {String} filePath 本地文件路径
- * @returns {Promise} 返回图片URL
- */
+const getAuthHeader = () => {
+  const token = uni.getStorageSync('token') || ''
+  return token.startsWith('Bearer ') ? token : `Bearer ${token}`
+}
+
 export const uploadImage = (filePath) => {
   return new Promise((resolve, reject) => {
-    uni.showLoading({ title: '上传中...' })
-    
+    uni.showLoading({ title: 'Uploading...' })
+
     uni.uploadFile({
       url: UPLOAD_URL,
-      filePath: filePath,
+      filePath,
       name: 'file',
       header: {
-        'Authorization': uni.getStorageSync('token') || ''
+        Authorization: getAuthHeader()
       },
       success: (res) => {
         uni.hideLoading()
-        const data = JSON.parse(res.data)
+        let data = null
+        try {
+          data = typeof res.data === 'string' ? JSON.parse(res.data) : res.data
+        } catch (parseError) {
+          console.error('Failed to parse upload response', parseError, res.data)
+          uni.showToast({
+            title: 'Upload response format error',
+            icon: 'none'
+          })
+          reject(parseError)
+          return
+        }
+
         if (data.code === 0) {
           resolve(data.data.url)
         } else {
           uni.showToast({
-            title: data.message || '上传失败',
+            title: data.message || 'Upload failed',
             icon: 'none'
           })
           reject(data)
@@ -33,7 +45,7 @@ export const uploadImage = (filePath) => {
       fail: (err) => {
         uni.hideLoading()
         uni.showToast({
-          title: '上传失败',
+          title: 'Upload failed',
           icon: 'none'
         })
         reject(err)
@@ -42,15 +54,10 @@ export const uploadImage = (filePath) => {
   })
 }
 
-/**
- * 选择并上传图片
- * @param {Number} count 最多选择数量
- * @returns {Promise} 返回图片URL数组
- */
 export const chooseAndUploadImage = (count = 1) => {
   return new Promise((resolve, reject) => {
     uni.chooseImage({
-      count: count,
+      count,
       sizeType: ['compressed'],
       sourceType: ['album', 'camera'],
       success: async (res) => {

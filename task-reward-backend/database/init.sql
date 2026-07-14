@@ -1,160 +1,232 @@
--- 任务返现平台数据库初始化脚本
+-- Task Reward platform database initialization
 
--- 1. 用户表
 CREATE TABLE IF NOT EXISTS users (
   id BIGINT PRIMARY KEY AUTO_INCREMENT,
-  openid VARCHAR(64) UNIQUE NOT NULL COMMENT '微信openid',
-  unionid VARCHAR(64) COMMENT '微信unionid',
-  nickname VARCHAR(100) COMMENT '昵称',
-  avatar VARCHAR(255) COMMENT '头像URL',
-  phone VARCHAR(255) COMMENT '手机号（加密存储）',
-  total_earnings DECIMAL(10,2) DEFAULT 0.00 COMMENT '累计收益',
-  available_balance DECIMAL(10,2) DEFAULT 0.00 COMMENT '可提现余额',
-  frozen_balance DECIMAL(10,2) DEFAULT 0.00 COMMENT '冻结金额',
-  status TINYINT DEFAULT 1 COMMENT '状态：1正常 2禁用',
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  openid VARCHAR(64) UNIQUE NOT NULL COMMENT 'WeChat openid',
+  unionid VARCHAR(64) DEFAULT NULL COMMENT 'WeChat unionid',
+  nickname VARCHAR(100) DEFAULT NULL COMMENT 'Nickname',
+  avatar VARCHAR(255) DEFAULT NULL COMMENT 'Avatar URL',
+  phone VARCHAR(255) DEFAULT NULL COMMENT 'Encrypted phone number',
+  total_earnings DECIMAL(10,2) NOT NULL DEFAULT 0.00 COMMENT 'Total earnings',
+  available_balance DECIMAL(10,2) NOT NULL DEFAULT 0.00 COMMENT 'Available balance',
+  frozen_balance DECIMAL(10,2) NOT NULL DEFAULT 0.00 COMMENT 'Frozen balance',
+  status TINYINT NOT NULL DEFAULT 1 COMMENT '1 active, 2 disabled',
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   INDEX idx_openid (openid),
   INDEX idx_phone (phone(20))
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='用户表';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Users';
 
--- 2. 商家表
+CREATE TABLE IF NOT EXISTS user_identity_links (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  user_id BIGINT NOT NULL COMMENT 'User ID',
+  identity_type VARCHAR(32) NOT NULL COMMENT 'Identity type',
+  identity_hash VARCHAR(128) NOT NULL COMMENT 'Identity hash',
+  identity_value VARCHAR(255) DEFAULT NULL COMMENT 'Masked identity value',
+  source VARCHAR(32) DEFAULT NULL COMMENT 'Source channel',
+  source_ref VARCHAR(255) DEFAULT NULL COMMENT 'Source reference',
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uk_identity (identity_type, identity_hash),
+  INDEX idx_user_id (user_id),
+  INDEX idx_identity_type (identity_type)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='User identity links';
+
+CREATE TABLE IF NOT EXISTS user_risk_flags (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  user_id BIGINT NOT NULL COMMENT 'User ID',
+  status TINYINT NOT NULL DEFAULT 1 COMMENT '1 blocked, 0 normal',
+  risk_reason VARCHAR(500) NOT NULL COMMENT 'Risk reason',
+  risk_tags JSON DEFAULT NULL COMMENT 'Risk tags',
+  source VARCHAR(32) DEFAULT NULL COMMENT 'Source channel',
+  blocked_at TIMESTAMP NULL DEFAULT NULL COMMENT 'Blocked time',
+  cleared_at TIMESTAMP NULL DEFAULT NULL COMMENT 'Cleared time',
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uk_user_id (user_id),
+  INDEX idx_status (status),
+  INDEX idx_blocked_at (blocked_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='User risk flags';
+
+CREATE TABLE IF NOT EXISTS user_platform_cooldowns (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  user_id BIGINT NOT NULL COMMENT 'User ID',
+  platform VARCHAR(32) NOT NULL COMMENT 'Platform',
+  last_submission_id BIGINT DEFAULT NULL COMMENT 'Last submission ID',
+  last_submission_at TIMESTAMP NULL DEFAULT NULL COMMENT 'Last submission time',
+  cooldown_until TIMESTAMP NULL DEFAULT NULL COMMENT 'Cooldown until',
+  cooldown_months INT NOT NULL DEFAULT 3 COMMENT 'Cooldown months',
+  reason VARCHAR(500) DEFAULT NULL COMMENT 'Cooldown reason',
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uk_user_platform (user_id, platform),
+  INDEX idx_cooldown_until (cooldown_until),
+  INDEX idx_user_id (user_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='User platform cooldowns';
+
 CREATE TABLE IF NOT EXISTS merchants (
   id BIGINT PRIMARY KEY AUTO_INCREMENT,
-  username VARCHAR(50) UNIQUE NOT NULL COMMENT '登录账号',
-  password VARCHAR(255) NOT NULL COMMENT '密码（bcrypt加密）',
-  company_name VARCHAR(200) COMMENT '公司名称',
-  contact_name VARCHAR(50) COMMENT '联系人',
-  contact_phone VARCHAR(20) COMMENT '联系电话',
-  email VARCHAR(100) COMMENT '邮箱',
-  balance DECIMAL(10,2) DEFAULT 0.00 COMMENT '账户余额',
-  status TINYINT DEFAULT 1 COMMENT '状态：1正常 2禁用',
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  username VARCHAR(50) UNIQUE NOT NULL COMMENT 'Login username',
+  password VARCHAR(255) NOT NULL COMMENT 'Bcrypt password hash',
+  company_name VARCHAR(200) DEFAULT NULL COMMENT 'Company name',
+  contact_name VARCHAR(50) DEFAULT NULL COMMENT 'Contact name',
+  contact_phone VARCHAR(20) DEFAULT NULL COMMENT 'Contact phone',
+  email VARCHAR(100) DEFAULT NULL COMMENT 'Email',
+  balance DECIMAL(10,2) NOT NULL DEFAULT 0.00 COMMENT 'Merchant balance',
+  status TINYINT NOT NULL DEFAULT 1 COMMENT '1 active, 2 disabled',
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   INDEX idx_username (username)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='商家表';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Merchants';
 
--- 3. 任务表
 CREATE TABLE IF NOT EXISTS tasks (
   id BIGINT PRIMARY KEY AUTO_INCREMENT,
-  merchant_id BIGINT NOT NULL COMMENT '商家ID',
-  title VARCHAR(200) NOT NULL COMMENT '任务标题',
-  description TEXT COMMENT '任务描述',
-  reward_amount DECIMAL(10,2) NOT NULL COMMENT '单次奖励金额',
-  total_quota INT NOT NULL COMMENT '总名额',
-  remaining_quota INT NOT NULL COMMENT '剩余名额',
-  search_keyword VARCHAR(100) COMMENT '搜索关键词',
-  shop_name VARCHAR(200) COMMENT '店铺名称',
-  product_link VARCHAR(500) COMMENT '商品链接',
-  requirements JSON COMMENT '任务要求',
-  status TINYINT DEFAULT 1 COMMENT '状态：1进行中 2已暂停 3已结束',
-  start_time TIMESTAMP NULL COMMENT '开始时间',
-  end_time TIMESTAMP NULL COMMENT '结束时间',
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  merchant_id BIGINT NOT NULL COMMENT 'Merchant ID',
+  platform VARCHAR(32) NOT NULL COMMENT 'Platform',
+  title VARCHAR(200) NOT NULL COMMENT 'Task title',
+  description TEXT DEFAULT NULL COMMENT 'Task description',
+  reward_amount DECIMAL(10,2) NOT NULL COMMENT 'Reward per submission',
+  total_quota INT NOT NULL COMMENT 'Total quota',
+  remaining_quota INT NOT NULL COMMENT 'Remaining quota',
+  search_keyword VARCHAR(100) DEFAULT NULL COMMENT 'Search keyword',
+  shop_name VARCHAR(200) DEFAULT NULL COMMENT 'Shop name',
+  product_link VARCHAR(500) DEFAULT NULL COMMENT 'Product link',
+  requirements JSON DEFAULT NULL COMMENT 'Task requirements',
+  status TINYINT NOT NULL DEFAULT 1 COMMENT '1 active, 2 paused, 3 closed',
+  start_time TIMESTAMP NULL DEFAULT NULL COMMENT 'Start time',
+  end_time TIMESTAMP NULL DEFAULT NULL COMMENT 'End time',
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   INDEX idx_merchant_id (merchant_id),
   INDEX idx_status (status),
   INDEX idx_start_time (start_time),
-  FOREIGN KEY (merchant_id) REFERENCES merchants(id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='任务表';
+  CONSTRAINT fk_tasks_merchant FOREIGN KEY (merchant_id) REFERENCES merchants(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Tasks';
 
--- 4. 任务提交记录表
 CREATE TABLE IF NOT EXISTS submissions (
   id BIGINT PRIMARY KEY AUTO_INCREMENT,
-  task_id BIGINT NOT NULL COMMENT '任务ID',
-  user_id BIGINT NOT NULL COMMENT '用户ID',
-  phone_number VARCHAR(255) COMMENT '手机号（加密）',
-  screenshot_search VARCHAR(500) COMMENT '搜索截图URL',
-  screenshot_shop_1 VARCHAR(500) COMMENT '店铺浏览截图1',
-  screenshot_shop_2 VARCHAR(500) COMMENT '店铺浏览截图2',
-  screenshot_shop_3 VARCHAR(500) COMMENT '店铺浏览截图3',
-  screenshot_follow VARCHAR(500) COMMENT '关注评论截图',
-  screenshot_share VARCHAR(500) COMMENT '分享截图',
-  screenshot_detail VARCHAR(500) COMMENT '详情页截图',
-  screenshot_cart VARCHAR(500) COMMENT '加购截图',
-  status TINYINT DEFAULT 0 COMMENT '状态：0待审核 1已通过 2已拒绝',
-  reject_reason VARCHAR(500) COMMENT '拒绝原因',
-  reward_amount DECIMAL(10,2) COMMENT '奖励金额',
-  reviewed_at TIMESTAMP NULL COMMENT '审核时间',
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  task_id BIGINT NOT NULL COMMENT 'Task ID',
+  user_id BIGINT NOT NULL COMMENT 'User ID',
+  platform VARCHAR(32) NOT NULL COMMENT 'Platform',
+  paid_amount DECIMAL(10,2) NOT NULL DEFAULT 0.00 COMMENT 'Actual paid amount',
+  phone_number VARCHAR(255) DEFAULT NULL COMMENT 'Encrypted phone number',
+  screenshot_search VARCHAR(500) DEFAULT NULL,
+  screenshot_shop_1 VARCHAR(500) DEFAULT NULL,
+  screenshot_shop_2 VARCHAR(500) DEFAULT NULL,
+  screenshot_shop_3 VARCHAR(500) DEFAULT NULL,
+  screenshot_follow VARCHAR(500) DEFAULT NULL,
+  screenshot_share VARCHAR(500) DEFAULT NULL,
+  screenshot_detail VARCHAR(500) DEFAULT NULL,
+  screenshot_cart VARCHAR(500) DEFAULT NULL,
+  status TINYINT NOT NULL DEFAULT 0 COMMENT '0 pending, 1 approved, 2 rejected',
+  reject_reason VARCHAR(500) DEFAULT NULL,
+  reward_amount DECIMAL(10,2) DEFAULT 0.00 COMMENT 'Reward amount',
+  reviewed_at TIMESTAMP NULL DEFAULT NULL COMMENT 'Review time',
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uk_task_user (task_id, user_id),
   INDEX idx_task_id (task_id),
   INDEX idx_user_id (user_id),
   INDEX idx_status (status),
   INDEX idx_created_at (created_at),
-  UNIQUE KEY uk_task_user (task_id, user_id) COMMENT '同一用户同一任务只能提交一次',
-  FOREIGN KEY (task_id) REFERENCES tasks(id),
-  FOREIGN KEY (user_id) REFERENCES users(id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='任务提交记录表';
+  CONSTRAINT fk_submissions_task FOREIGN KEY (task_id) REFERENCES tasks(id),
+  CONSTRAINT fk_submissions_user FOREIGN KEY (user_id) REFERENCES users(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Submissions';
 
--- 5. 收益记录表
 CREATE TABLE IF NOT EXISTS earnings (
   id BIGINT PRIMARY KEY AUTO_INCREMENT,
-  user_id BIGINT NOT NULL COMMENT '用户ID',
-  submission_id BIGINT COMMENT '提交记录ID',
-  type TINYINT NOT NULL COMMENT '类型：1任务奖励 2提现 3退款',
-  amount DECIMAL(10,2) NOT NULL COMMENT '金额',
-  balance_after DECIMAL(10,2) NOT NULL COMMENT '操作后余额',
-  description VARCHAR(200) COMMENT '说明',
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  user_id BIGINT NOT NULL COMMENT 'User ID',
+  submission_id BIGINT DEFAULT NULL COMMENT 'Submission ID',
+  type TINYINT NOT NULL COMMENT '1 task reward, 2 withdrawal, 3 refund',
+  amount DECIMAL(10,2) NOT NULL COMMENT 'Amount',
+  balance_after DECIMAL(10,2) NOT NULL COMMENT 'Balance after operation',
+  description VARCHAR(200) DEFAULT NULL COMMENT 'Description',
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   INDEX idx_user_id (user_id),
   INDEX idx_type (type),
   INDEX idx_created_at (created_at),
-  FOREIGN KEY (user_id) REFERENCES users(id),
-  FOREIGN KEY (submission_id) REFERENCES submissions(id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='收益记录表';
+  CONSTRAINT fk_earnings_user FOREIGN KEY (user_id) REFERENCES users(id),
+  CONSTRAINT fk_earnings_submission FOREIGN KEY (submission_id) REFERENCES submissions(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Earnings';
 
--- 6. 提现记录表
 CREATE TABLE IF NOT EXISTS withdrawals (
   id BIGINT PRIMARY KEY AUTO_INCREMENT,
-  user_id BIGINT NOT NULL COMMENT '用户ID',
-  amount DECIMAL(10,2) NOT NULL COMMENT '提现金额',
-  fee DECIMAL(10,2) DEFAULT 0.00 COMMENT '手续费',
-  actual_amount DECIMAL(10,2) NOT NULL COMMENT '实际到账金额',
-  withdraw_type TINYINT DEFAULT 1 COMMENT '提现方式：1微信 2支付宝',
-  account_info VARCHAR(500) COMMENT '账户信息（加密）',
-  status TINYINT DEFAULT 0 COMMENT '状态：0待处理 1已完成 2已拒绝',
-  reject_reason VARCHAR(200) COMMENT '拒绝原因',
-  processed_at TIMESTAMP NULL COMMENT '处理时间',
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  user_id BIGINT NOT NULL COMMENT 'User ID',
+  amount DECIMAL(10,2) NOT NULL COMMENT 'Withdrawal amount',
+  fee DECIMAL(10,2) NOT NULL DEFAULT 0.00 COMMENT 'Fee',
+  actual_amount DECIMAL(10,2) NOT NULL COMMENT 'Net amount',
+  withdraw_type TINYINT NOT NULL DEFAULT 1 COMMENT '1 WeChat, 2 Alipay',
+  account_info VARCHAR(500) DEFAULT NULL COMMENT 'Encrypted account info',
+  status TINYINT NOT NULL DEFAULT 0 COMMENT '0 pending, 1 processed, 2 rejected',
+  reject_reason VARCHAR(200) DEFAULT NULL,
+  processed_at TIMESTAMP NULL DEFAULT NULL COMMENT 'Processed time',
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   INDEX idx_user_id (user_id),
   INDEX idx_status (status),
-  FOREIGN KEY (user_id) REFERENCES users(id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='提现记录表';
+  CONSTRAINT fk_withdrawals_user FOREIGN KEY (user_id) REFERENCES users(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Withdrawals';
 
--- 7. 商家充值记录表
+CREATE TABLE IF NOT EXISTS audit_logs (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  operator_type VARCHAR(20) NOT NULL COMMENT 'Operator type',
+  operator_id BIGINT NOT NULL COMMENT 'Operator ID',
+  action VARCHAR(50) NOT NULL COMMENT 'Action',
+  target_type VARCHAR(20) NOT NULL COMMENT 'Target type',
+  target_id BIGINT NOT NULL COMMENT 'Target ID',
+  summary VARCHAR(255) DEFAULT NULL COMMENT 'Summary',
+  detail JSON DEFAULT NULL COMMENT 'Detail',
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  INDEX idx_operator_id (operator_id),
+  INDEX idx_target_type (target_type),
+  INDEX idx_action (action),
+  INDEX idx_created_at (created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Audit logs';
+
 CREATE TABLE IF NOT EXISTS merchant_recharges (
   id BIGINT PRIMARY KEY AUTO_INCREMENT,
-  merchant_id BIGINT NOT NULL COMMENT '商家ID',
-  amount DECIMAL(10,2) NOT NULL COMMENT '充值金额',
-  payment_method TINYINT COMMENT '支付方式：1支付宝 2微信 3银行转账',
-  transaction_no VARCHAR(100) COMMENT '交易流水号',
-  status TINYINT DEFAULT 0 COMMENT '状态：0待确认 1已完成',
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  merchant_id BIGINT NOT NULL COMMENT 'Merchant ID',
+  amount DECIMAL(10,2) NOT NULL COMMENT 'Recharge amount',
+  payment_method TINYINT DEFAULT NULL COMMENT '1 Alipay, 2 WeChat, 3 bank transfer',
+  transaction_no VARCHAR(100) DEFAULT NULL COMMENT 'Transaction number',
+  status TINYINT NOT NULL DEFAULT 0 COMMENT '0 pending, 1 completed',
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   INDEX idx_merchant_id (merchant_id),
-  FOREIGN KEY (merchant_id) REFERENCES merchants(id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='商家充值记录表';
+  CONSTRAINT fk_recharges_merchant FOREIGN KEY (merchant_id) REFERENCES merchants(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Merchant recharges';
 
--- 8. 系统配置表
 CREATE TABLE IF NOT EXISTS system_config (
   id INT PRIMARY KEY AUTO_INCREMENT,
-  config_key VARCHAR(50) UNIQUE NOT NULL COMMENT '配置键',
-  config_value TEXT COMMENT '配置值',
-  description VARCHAR(200) COMMENT '说明',
-  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='系统配置表';
+  config_key VARCHAR(50) UNIQUE NOT NULL COMMENT 'Config key',
+  config_value TEXT DEFAULT NULL COMMENT 'Config value',
+  description VARCHAR(200) DEFAULT NULL COMMENT 'Description',
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='System config';
 
--- 插入初始配置
+CREATE TABLE IF NOT EXISTS login_attempts (
+  login_key VARCHAR(128) PRIMARY KEY COMMENT 'Login key',
+  count INT NOT NULL DEFAULT 0 COMMENT 'Failure count',
+  locked_until TIMESTAMP NULL DEFAULT NULL COMMENT 'Locked until',
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  INDEX idx_locked_until (locked_until)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Login attempts';
+
 INSERT INTO system_config (config_key, config_value, description) VALUES
-('min_withdrawal_amount', '10.00', '最低提现金额'),
-('withdrawal_fee_rate', '0.01', '提现手续费率'),
-('platform_commission_rate', '0.10', '平台抽成比例'),
-('task_review_timeout', '24', '任务审核超时时间（小时）')
-ON DUPLICATE KEY UPDATE config_value = VALUES(config_value);
+('min_withdrawal_amount', '10.00', 'Minimum withdrawal amount'),
+('withdrawal_fee_rate', '0.01', 'Withdrawal fee rate'),
+('platform_commission_rate', '0.10', 'Platform commission rate'),
+('task_review_timeout', '24', 'Task review timeout in hours')
+ON DUPLICATE KEY UPDATE
+  config_value = VALUES(config_value),
+  description = VALUES(description);
 
--- 插入测试商家账号（密码: admin123）
-INSERT INTO merchants (username, password, company_name, balance, status)
-VALUES ('admin', '$2b$10$rKvVJKxZ5yJxH5yJxH5yJOqKvVJKxZ5yJxH5yJxH5yJxH5yJxH5yJ', '测试商家', 10000.00, 1)
-ON DUPLICATE KEY UPDATE username = VALUES(username);
+INSERT INTO merchants (username, password, company_name, contact_phone, balance, status)
+VALUES ('admin', '$2a$10$1zmgkT7R2lC3QLkmKK41x.I5JIY5rtlSNcNWSf1mzrtlC9AiCDlIa', 'Demo merchant', '13800138000', 10000.00, 1)
+ON DUPLICATE KEY UPDATE
+  password = VALUES(password),
+  company_name = VALUES(company_name),
+  contact_phone = VALUES(contact_phone),
+  balance = VALUES(balance),
+  status = VALUES(status);

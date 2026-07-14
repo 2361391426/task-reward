@@ -1,33 +1,185 @@
-// 提交任务
-const db = require('../../lib/db');
-const { authenticateUser } = require('../../lib/auth');
-const { success, error, ErrorCodes } = require('../../lib/response');
-const { encrypt } = require('../../lib/crypto');
+const db = require('../../lib/db')
+const { authenticateUser } = require('../../lib/auth')
+const { success, error, ErrorCodes } = require('../../lib/response')
+const { encrypt } = require('../../lib/crypto')
+const { parsePositiveInt } = require('../../lib/pagination')
+const {
+  buildIdentityCandidates,
+  buildIdentityConflictReason,
+  buildCooldownReason,
+  buildBlockedReason,
+  maskValue
+} = require('../../lib/fraud')
+
+const addMonths = (value, months) => {
+  const date = new Date(value)
+  const next = new Date(date)
+  next.setMonth(next.getMonth() + months)
+  return next
+}
+
+const parseTags = (value) => {
+  if (!value) return []
+  if (Array.isArray(value)) return value
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value)
+      return Array.isArray(parsed) ? parsed : [parsed].filter(Boolean)
+    } catch {
+      return [value]
+    }
+  }
+  return [value]
+}
+
+const getRiskSnapshot = async (connection, userId) => {
+  const [riskRows] = await connection.query(
+    `SELECT status, risk_reason, risk_tags, blocked_at, cleared_at
+     FROM user_risk_flags
+     WHERE user_id = ?
+     LIMIT 1`,
+    [userId]
+  )
+
+  const [cooldownRows] = await connection.query(
+    `SELECT platform, last_submission_id, last_submission_at, cooldown_until, cooldown_months, reason
+     FROM user_platform_cooldowns
+     WHERE user_id = ?
+     ORDER BY updated_at DESC`,
+    [userId]
+  )
+
+  const risk = riskRows[0] || null
+  return {
+    status: risk ? parsePositiveInt(risk.status, 0) : 0,
+    reason: risk?.risk_reason || '',
+    tags: parseTags(risk?.risk_tags),
+    blocked_at: risk?.blocked_at || null,
+    cleared_at: risk?.cleared_at || null,
+    cooldowns: cooldownRows.map(item => ({
+      platform: item.platform,
+      last_submission_id: item.last_submission_id,
+      last_submission_at: item.last_submission_at,
+      cooldown_until: item.cooldown_until,
+      cooldown_months: parsePositiveInt(item.cooldown_months, 3) || 3,
+      reason: item.reason || ''
+    }))
+  }
+}
+
+const upsertRiskFlag = async (connection, userId, reason, tags = [], source = 'submission') => {
+  await connection.query(
+    `INSERT INTO user_risk_flags
+     (user_id, status, risk_reason, risk_tags, source, blocked_at, cleared_at, created_at, updated_at)
+     VALUES (?, 1, ?, ?, ?, NOW(), NULL, NOW(), NOW())
+     ON DUPLICATE KEY UPDATE
+       status = 1,
+       risk_reason = VALUES(risk_reason),
+       risk_tags = VALUES(risk_tags),
+       source = VALUES(source),
+       blocked_at = NOW(),
+       cleared_at = NULL,
+       updated_at = NOW()`,
+    [userId, reason, JSON.stringify(tags), source]
+  )
+}
+
+const upsertCooldown = async (connection, userId, platform, submissionId, lastSubmissionAt, cooldownUntil, reason) => {
+  await connection.query(
+    `INSERT INTO user_platform_cooldowns
+     (user_id, platform, last_submission_id, last_submission_at, cooldown_until, cooldown_months, reason, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, 3, ?, NOW(), NOW())
+     ON DUPLICATE KEY UPDATE
+       last_submission_id = VALUES(last_submission_id),
+       last_submission_at = VALUES(last_submission_at),
+       cooldown_until = VALUES(cooldown_until),
+       cooldown_months = VALUES(cooldown_months),
+       reason = VALUES(reason),
+       updated_at = NOW()`,
+    [userId, platform, submissionId, lastSubmissionAt, cooldownUntil, reason]
+  )
+}
+
+const upsertIdentityLinks = async (connection, userId, candidates, sourceRef) => {
+  for (const candidate of candidates) {
+    await connection.query(
+      `INSERT INTO user_identity_links
+       (user_id, identity_type, identity_hash, identity_value, source, source_ref, created_at, updated_at)
+       VALUES (?, ?, ?, ?, 'submission', ?, NOW(), NOW())
+       ON DUPLICATE KEY UPDATE
+         user_id = VALUES(user_id),
+         identity_value = VALUES(identity_value),
+         source = VALUES(source),
+         source_ref = VALUES(source_ref),
+         updated_at = NOW()`,
+      [
+        userId,
+        candidate.type,
+        candidate.hash,
+        candidate.maskedValue,
+        sourceRef
+      ]
+    )
+  }
+}
+
+const findIdentityConflicts = async (connection, userId, candidates) => {
+  const conflicts = []
+
+  for (const candidate of candidates) {
+    const [rows] = await connection.query(
+      `SELECT user_id, identity_type, identity_hash
+       FROM user_identity_links
+       WHERE identity_type = ? AND identity_hash = ?`,
+      [candidate.type, candidate.hash]
+    )
+
+    for (const row of rows) {
+      if (parseInt(row.user_id, 10) !== parseInt(userId, 10)) {
+        conflicts.push({
+          user_id: parseInt(row.user_id, 10),
+          identity_type: row.identity_type
+        })
+      }
+    }
+  }
+
+  return conflicts
+}
+
+const buildSourceRef = (req) => {
+  const ip = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.socket?.remoteAddress || ''
+  const deviceId = req.headers['x-device-id'] || ''
+  return JSON.stringify({
+    ip,
+    device_id: deviceId
+  })
+}
 
 module.exports = async (req, res) => {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  res.setHeader('Access-Control-Allow-Origin', '*')
+  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS')
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Device-Id')
 
   if (req.method === 'OPTIONS') {
-    return res.status(200).end();
+    return res.status(200).end()
   }
 
   if (req.method !== 'POST') {
-    return res.status(405).json(error(405, 'Method not allowed'));
+    return res.status(405).json(error(405, 'Method not allowed'))
   }
 
   try {
-    // 认证
-    const auth = await authenticateUser(req, res);
+    const auth = await authenticateUser(req, res)
     if (auth.error) {
-      return res.status(auth.status).json(error(auth.error.code, auth.error.message));
+      return res.status(auth.status).json(error(auth.error.code, auth.error.message))
     }
 
-    const userId = auth.user.id;
+    const userId = auth.user.id
     const {
       task_id,
       phone_number,
+      paid_amount,
       screenshot_search,
       screenshot_shop_1,
       screenshot_shop_2,
@@ -35,97 +187,211 @@ module.exports = async (req, res) => {
       screenshot_follow,
       screenshot_share,
       screenshot_detail,
-      screenshot_cart
-    } = req.body;
+      screenshot_cart,
+      address_text,
+      address,
+      device_id,
+      deviceId
+    } = req.body
 
-    // 验证必填字段
-    if (!task_id || !phone_number || !screenshot_search || !screenshot_shop_1 ||
-        !screenshot_shop_2 || !screenshot_shop_3 || !screenshot_follow ||
-        !screenshot_share || !screenshot_detail || !screenshot_cart) {
-      return res.status(400).json(error(ErrorCodes.PARAM_ERROR, '缺少必填字段'));
+    if (
+      !task_id ||
+      !phone_number ||
+      !paid_amount ||
+      !screenshot_search ||
+      !screenshot_shop_1 ||
+      !screenshot_shop_2 ||
+      !screenshot_shop_3 ||
+      !screenshot_follow ||
+      !screenshot_share ||
+      !screenshot_detail ||
+      !screenshot_cart
+    ) {
+      return res.status(400).json(error(ErrorCodes.PARAM_ERROR, '缺少必填字段'))
     }
 
-    // 使用事务
+    const actualPaidAmount = parseFloat(paid_amount)
+    if (Number.isNaN(actualPaidAmount) || actualPaidAmount <= 0) {
+      return res.status(400).json(error(ErrorCodes.PARAM_ERROR, '实付金额不正确'))
+    }
+
     const result = await db.transaction(async (connection) => {
-      // 1. 检查任务
-      const [tasks] = await connection.query(
+      const [taskRows] = await connection.query(
         'SELECT * FROM tasks WHERE id = ? FOR UPDATE',
         [task_id]
-      );
+      )
 
-      const task = tasks[0];
+      const task = taskRows[0]
       if (!task) {
-        throw new Error('任务不存在');
+        return { error: 'task_not_found' }
       }
 
-      if (task.status !== 1) {
-        throw new Error('任务已结束');
+      const taskStatus = parsePositiveInt(task.status, 0)
+      if (taskStatus !== 1) {
+        return { error: 'task_closed' }
       }
 
-      if (task.remaining_quota <= 0) {
-        throw new Error('名额已满');
+      if (Number(task.remaining_quota || 0) <= 0) {
+        return { error: 'quota_full' }
       }
 
-      // 检查时间
-      const now = new Date();
+      const now = new Date()
       if (task.start_time && new Date(task.start_time) > now) {
-        throw new Error('任务未开始');
+        return { error: 'task_not_started' }
       }
       if (task.end_time && new Date(task.end_time) < now) {
-        throw new Error('任务已过期');
+        return { error: 'task_ended' }
       }
 
-      // 2. 检查是否已提交
-      const [existing] = await connection.query(
-        'SELECT id FROM submissions WHERE task_id = ? AND user_id = ?',
+      const [existingRows] = await connection.query(
+        'SELECT id FROM submissions WHERE task_id = ? AND user_id = ? FOR UPDATE',
         [task_id, userId]
-      );
-
-      if (existing.length > 0) {
-        throw new Error('已提交过该任务');
+      )
+      if (existingRows.length > 0) {
+        return { error: 'already_submitted' }
       }
 
-      // 3. 加密手机号
-      const encryptedPhone = encrypt(phone_number);
+      const [riskSnapshotBefore] = await connection.query(
+        `SELECT status FROM user_risk_flags WHERE user_id = ? LIMIT 1`,
+        [userId]
+      )
+      const currentRiskStatus = riskSnapshotBefore[0] ? parsePositiveInt(riskSnapshotBefore[0].status, 0) : 0
+      if (currentRiskStatus === 1) {
+        return { error: 'user_blocked' }
+      }
 
-      // 4. 创建提交记录
+      const identities = buildIdentityCandidates({
+        user: auth.user,
+        phoneNumber: phone_number,
+        addressText: address_text || address || '',
+        req,
+        submissionId: null
+      }).map(item => ({
+        ...item,
+        maskedValue: maskValue(item.value, item.type === 'ip' ? 2 : 3, item.type === 'device' ? 2 : 4)
+      }))
+
+      const identityConflicts = await findIdentityConflicts(connection, userId, identities)
+      if (identityConflicts.length > 0) {
+        const conflictTypes = [...new Set(identityConflicts.map(item => item.identity_type))]
+        const reason = buildBlockedReason(
+          buildIdentityConflictReason(conflictTypes, task.platform),
+          conflictTypes
+        )
+
+        await upsertRiskFlag(connection, userId, reason, conflictTypes, 'submission')
+        for (const conflict of identityConflicts) {
+          await upsertRiskFlag(connection, conflict.user_id, reason, conflictTypes, 'submission')
+        }
+
+        return { error: 'identity_conflict' }
+      }
+
+      const [cooldownRows] = await connection.query(
+        `SELECT id, created_at
+         FROM submissions
+         WHERE user_id = ? AND platform = ?
+         ORDER BY created_at DESC
+         LIMIT 1 FOR UPDATE`,
+        [userId, task.platform]
+      )
+
+      const lastSubmission = cooldownRows[0]
+      if (lastSubmission) {
+        const lastSubmitTime = new Date(lastSubmission.created_at)
+        const cooldownUntil = addMonths(lastSubmitTime, 3)
+        if (cooldownUntil > now) {
+          const reason = buildCooldownReason(task.platform, cooldownUntil)
+          await upsertCooldown(
+            connection,
+            userId,
+            task.platform,
+            lastSubmission.id,
+            lastSubmission.created_at,
+            cooldownUntil,
+            reason
+          )
+          return { error: 'platform_cooldown' }
+        }
+      }
+
+      const encryptedPhone = encrypt(phone_number)
       const [insertResult] = await connection.query(
         `INSERT INTO submissions
-         (task_id, user_id, phone_number, screenshot_search, screenshot_shop_1,
+         (task_id, user_id, platform, paid_amount, phone_number, screenshot_search, screenshot_shop_1,
           screenshot_shop_2, screenshot_shop_3, screenshot_follow, screenshot_share,
           screenshot_detail, screenshot_cart, reward_amount, status, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NOW(), NOW())`,
-        [task_id, userId, encryptedPhone, screenshot_search, screenshot_shop_1,
-         screenshot_shop_2, screenshot_shop_3, screenshot_follow, screenshot_share,
-         screenshot_detail, screenshot_cart, task.reward_amount]
-      );
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NOW(), NOW())`,
+        [
+          task_id,
+          userId,
+          task.platform,
+          actualPaidAmount,
+          encryptedPhone,
+          screenshot_search,
+          screenshot_shop_1,
+          screenshot_shop_2,
+          screenshot_shop_3,
+          screenshot_follow,
+          screenshot_share,
+          screenshot_detail,
+          screenshot_cart,
+          task.reward_amount
+        ]
+      )
 
-      // 5. 减少剩余名额
       await connection.query(
         'UPDATE tasks SET remaining_quota = remaining_quota - 1 WHERE id = ?',
         [task_id]
-      );
+      )
 
-      return { submission_id: insertResult.insertId };
-    });
+      await upsertIdentityLinks(connection, userId, identities, buildSourceRef(req))
 
-    res.json(success(result, '提交成功，等待审核'));
+      const cooldownUntil = addMonths(now, 3)
+      await upsertCooldown(
+        connection,
+        userId,
+        task.platform,
+        insertResult.insertId,
+        now.toISOString(),
+        cooldownUntil,
+        buildCooldownReason(task.platform, cooldownUntil)
+      )
+
+      return { submission_id: insertResult.insertId }
+    })
+
+    if (result && result.error) {
+      if (result.error === 'task_not_found') {
+        return res.status(404).json(error(ErrorCodes.TASK_NOT_FOUND, '任务不存在'))
+      }
+      if (result.error === 'task_closed' || result.error === 'task_not_started' || result.error === 'task_ended') {
+        return res.status(400).json(error(ErrorCodes.TASK_ENDED, '任务已结束'))
+      }
+      if (result.error === 'quota_full') {
+        return res.status(400).json(error(ErrorCodes.QUOTA_FULL, '名额已满'))
+      }
+      if (result.error === 'already_submitted') {
+        return res.status(400).json(error(ErrorCodes.ALREADY_SUBMITTED, '已提交过该任务'))
+      }
+      if (result.error === 'platform_cooldown') {
+        return res.status(403).json(error(ErrorCodes.NO_PERMISSION, '该平台三个月内只能接一次单'))
+      }
+      if (result.error === 'identity_conflict') {
+        return res.status(403).json(error(ErrorCodes.NO_PERMISSION, '检测到统一用户，已禁止接单'))
+      }
+      if (result.error === 'user_blocked') {
+        return res.status(403).json(error(ErrorCodes.NO_PERMISSION, '当前账号已被标记，禁止接单'))
+      }
+    }
+
+    return res.json(success(result, '提交成功，等待审核'))
   } catch (err) {
-    console.error('Submit task error:', err);
-
-    if (err.message === '任务不存在') {
-      return res.status(404).json(error(ErrorCodes.TASK_NOT_FOUND, err.message));
-    }
-    if (err.message === '任务已结束' || err.message === '任务未开始' || err.message === '任务已过期') {
-      return res.status(400).json(error(ErrorCodes.TASK_ENDED, err.message));
-    }
-    if (err.message === '名额已满') {
-      return res.status(400).json(error(ErrorCodes.QUOTA_FULL, err.message));
-    }
-    if (err.message === '已提交过该任务') {
-      return res.status(400).json(error(ErrorCodes.ALREADY_SUBMITTED, err.message));
+    console.error('Submit task error:', err)
+    if (err.message === 'invalid_amount') {
+      return res.status(400).json(error(ErrorCodes.PARAM_ERROR, '实付金额不正确'))
     }
 
-    res.status(500).json(error(500, '服务器错误'));
+    return res.status(500).json(error(500, '服务器错误'))
   }
-};
+}

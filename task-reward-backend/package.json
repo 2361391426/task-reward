@@ -6,7 +6,12 @@
   "scripts": {
     "dev": "vercel dev",
     "deploy": "vercel --prod",
-    "test": "node server-local.js"
+    "start:local": "node server-local.js",
+    "check": "node scripts/check-config.js",
+    "backup:local": "node scripts/backup-local.js",
+    "smoke": "node scripts/smoke-test.js",
+    "test:p2": "node scripts/p2-regression-test.js",
+    "test": "npm run smoke"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.470.0",
@@ -19,7 +24,6 @@
     "jsonwebtoken": "^9.0.2",
     "multer": "^1.4.5-lts.1",
     "mysql2": "^3.6.5",
-    "better-sqlite3": "^9.2.2",
     "uuid": "^9.0.1"
   },
   "devDependencies": {

@@ -1,36 +1,51 @@
-// JWT认证工具
 const jwt = require('jsonwebtoken');
 const db = require('./db');
 
-const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production';
+const DEV_JWT_SECRET = 'dev-only-secret-change-before-production';
+const isProduction = ['production', 'prod'].includes((process.env.NODE_ENV || '').toLowerCase()) ||
+  process.env.VERCEL_ENV === 'production';
 
-// 生成token
-function generateToken(payload, expiresIn = '7d') {
-  return jwt.sign(payload, JWT_SECRET, { expiresIn });
+function getJwtSecret() {
+  if (process.env.JWT_SECRET) {
+    return process.env.JWT_SECRET;
+  }
+
+  if (isProduction) {
+    throw new Error('JWT_SECRET must be set in production');
+  }
+
+  if (!getJwtSecret.warned) {
+    console.warn('[auth] JWT_SECRET is not set. Using a development fallback secret.');
+    getJwtSecret.warned = true;
+  }
+
+  return DEV_JWT_SECRET;
 }
 
-// 验证token
+function generateToken(payload, expiresIn = '7d') {
+  return jwt.sign(payload, getJwtSecret(), { expiresIn });
+}
+
 function verifyToken(token) {
   try {
-    return jwt.verify(token, JWT_SECRET);
+    return jwt.verify(token, getJwtSecret());
   } catch (error) {
     return null;
   }
 }
 
-// 用户认证中间件
-async function authenticateUser(req, res) {
+async function authenticateUser(req) {
   const authHeader = req.headers.authorization;
 
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    return { error: { code: 1002, message: '未登录' }, status: 401 };
+    return { error: { code: 1002, message: 'Not logged in' }, status: 401 };
   }
 
   const token = authHeader.replace('Bearer ', '');
   const decoded = verifyToken(token);
 
   if (!decoded || decoded.type !== 'user') {
-    return { error: { code: 1002, message: 'Token无效或已过期' }, status: 401 };
+    return { error: { code: 1002, message: 'Token invalid or expired' }, status: 401 };
   }
 
   const user = await db.queryOne(
@@ -39,25 +54,24 @@ async function authenticateUser(req, res) {
   );
 
   if (!user) {
-    return { error: { code: 2001, message: '用户不存在或已被禁用' }, status: 401 };
+    return { error: { code: 2001, message: 'User not found or disabled' }, status: 401 };
   }
 
   return { user };
 }
 
-// 商家认证中间件
-async function authenticateMerchant(req, res) {
+async function authenticateMerchant(req) {
   const authHeader = req.headers.authorization;
 
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    return { error: { code: 1002, message: '未登录' }, status: 401 };
+    return { error: { code: 1002, message: 'Not logged in' }, status: 401 };
   }
 
   const token = authHeader.replace('Bearer ', '');
   const decoded = verifyToken(token);
 
   if (!decoded || decoded.type !== 'merchant') {
-    return { error: { code: 1002, message: 'Token无效或已过期' }, status: 401 };
+    return { error: { code: 1002, message: 'Token invalid or expired' }, status: 401 };
   }
 
   const merchant = await db.queryOne(
@@ -66,7 +80,7 @@ async function authenticateMerchant(req, res) {
   );
 
   if (!merchant) {
-    return { error: { code: 2001, message: '商家不存在或已被禁用' }, status: 401 };
+    return { error: { code: 2001, message: 'Merchant not found or disabled' }, status: 401 };
   }
 
   return { merchant };

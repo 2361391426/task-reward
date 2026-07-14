@@ -1,41 +1,51 @@
 <script>
-import { wxLogin } from './api/user.js'
+import { wxLogin, getUserInfo } from './api/user.js'
 
 export default {
-  onLaunch: function() {
-    console.log('App Launch')
+  onLaunch() {
     this.checkLogin()
   },
-  onShow: function() {
-    console.log('App Show')
-  },
-  onHide: function() {
-    console.log('App Hide')
-  },
+  onShow() {},
+  onHide() {},
   methods: {
     async checkLogin() {
       const token = uni.getStorageSync('token')
       if (!token) {
-        // 自动登录
+        await this.autoLogin()
+        return
+      }
+
+      try {
+        await getUserInfo()
+      } catch (error) {
+        uni.removeStorageSync('token')
+        uni.removeStorageSync('userInfo')
         await this.autoLogin()
       }
     },
 
-    async autoLogin() {
-      try {
-        // 获取微信登录凭证
-        const loginRes = await uni.login()
-        if (loginRes.code) {
-          // 调用后端登录接口
-          const res = await wxLogin(loginRes.code)
-          // 保存 token
-          uni.setStorageSync('token', res.token)
-          uni.setStorageSync('userInfo', res.user)
-          console.log('自动登录成功')
-        }
-      } catch (error) {
-        console.error('自动登录失败', error)
-      }
+    autoLogin() {
+      return new Promise((resolve, reject) => {
+        uni.login({
+          success: async (loginRes) => {
+            if (!loginRes.code) {
+              reject(new Error('未获取到登录凭证'))
+              return
+            }
+
+            try {
+              const res = await wxLogin(loginRes.code)
+              uni.setStorageSync('token', res.token)
+              uni.setStorageSync('userInfo', res.user)
+              resolve(res)
+            } catch (error) {
+              console.error('自动登录失败', error)
+              reject(error)
+            }
+          },
+          fail: reject
+        })
+      })
     }
   }
 }

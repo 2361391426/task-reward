@@ -5,6 +5,12 @@ node_modules/
 dist/
 unpackage/
 
+# Backend runtime data
+task-reward-backend/data.json
+task-reward-backend/uploads/
+task-reward-backend/backups/
+task-reward-backend/test.db
+
 # IDE
 .vscode/
 .idea/

@@ -1,5 +1,8 @@
 import { createRouter, createWebHistory } from 'vue-router'
+import NProgress from 'nprogress'
 import { useAuthStore } from '@/stores/auth'
+
+NProgress.configure({ showSpinner: false })
 
 const routes = [
   {
@@ -31,6 +34,26 @@ const routes = [
         path: 'submissions',
         name: 'Submissions',
         component: () => import('@/views/Submissions.vue')
+      },
+      {
+        path: 'withdrawals',
+        name: 'Withdrawals',
+        component: () => import('@/views/Withdrawals.vue')
+      },
+      {
+        path: 'recharges',
+        name: 'Recharges',
+        component: () => import('@/views/Recharges.vue')
+      },
+      {
+        path: 'audit-logs',
+        name: 'AuditLogs',
+        component: () => import('@/views/AuditLogs.vue')
+      },
+      {
+        path: 'risk-users',
+        name: 'RiskUsers',
+        component: () => import('@/views/RiskUsers.vue')
       }
     ]
   }
@@ -42,6 +65,7 @@ const router = createRouter({
 })
 
 router.beforeEach((to, from, next) => {
+  NProgress.start()
   const authStore = useAuthStore()
 
   if (to.meta.requiresAuth && !authStore.token) {
@@ -51,6 +75,14 @@ router.beforeEach((to, from, next) => {
   } else {
     next()
   }
+})
+
+router.afterEach(() => {
+  NProgress.done()
+})
+
+router.onError(() => {
+  NProgress.done()
 })
 
 export default router
