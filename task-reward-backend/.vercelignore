@@ -3,6 +3,7 @@
 !.env.example
 api/**
 !api/[...path].js
+!api/health.js
 uploads/
 backups/
 data.json
