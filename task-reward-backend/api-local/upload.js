@@ -74,65 +74,85 @@ const upload = multer({
   storage,
   limits: { fileSize: MAX_FILE_SIZE },
   fileFilter: (req, file, cb) => {
-    const allowedTypes = /jpeg|jpg|png|gif|webp/
-    const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase())
-    const mimetype = allowedTypes.test(file.mimetype)
+    const mimetype = /^image\/(jpeg|jpg|png|gif|webp)$/i.test(file.mimetype)
 
-    if (mimetype && extname) {
+    if (mimetype) {
       return cb(null, true)
     }
-    cb(new Error('Only image files are allowed'))
+    cb(new Error('仅支持图片文件'))
   }
 })
 
-const requireUser = (req, res) => {
-  const token = req.headers.authorization?.replace('Bearer ', '')
-  if (!token) {
-    return { error: true, response: res.status(401).json(error('Not logged in')) }
-  }
+const getToken = (req) => req.headers.authorization?.replace('Bearer ', '')
 
-  let decoded
+const verifyToken = (token) => {
+  if (!token) return null
   try {
-    decoded = jwt.verify(token, process.env.JWT_SECRET || 'test-jwt-secret')
+    return jwt.verify(token, process.env.JWT_SECRET || 'test-jwt-secret')
   } catch (err) {
-    return { error: true, response: res.status(401).json(error('Token invalid or expired')) }
+    return null
   }
+}
 
-  const user = queryOne('users', { id: decoded.userId })
-  if (!user) {
-    return { error: true, response: res.status(401).json(error('User not found or disabled')) }
-  }
+const requireUser = (req) => {
+  const decoded = verifyToken(getToken(req))
+  if (!decoded) return null
 
-  return { user }
+  const userId = decoded.userId || decoded.user_id
+  if (!userId) return null
+
+  const user = queryOne('users', { id: userId })
+  if (!user) return null
+
+  return { user, decoded }
+}
+
+const requireMerchant = (req) => {
+  const decoded = verifyToken(getToken(req))
+  if (!decoded) return null
+
+  const merchantId = decoded.merchantId || decoded.merchant_id || decoded.user_id
+  if (!merchantId) return null
+
+  const merchant = queryOne('merchants', { id: merchantId })
+  if (!merchant) return null
+
+  return { merchant, decoded }
 }
 
 router.post('/', (req, res, next) => {
-  const auth = requireUser(req, res)
-  if (!auth || auth.error) {
-    return
+  const auth = requireUser(req) || requireMerchant(req)
+  if (!auth) {
+    return res.status(401).json(error('未登录或账号无效'))
   }
-  req.user = auth.user
+
+  req.user = auth.user || auth.merchant
   return upload.single('file')(req, res, next)
 }, (req, res) => {
   try {
     if (!req.file) {
-      return res.json(error('Please select a file'))
+      return res.json(error('请选择文件'))
     }
 
     const filePath = path.join(__dirname, '../uploads', req.file.filename)
     const fileBuffer = fs.readFileSync(filePath)
     const detectedType = detectImageType(fileBuffer)
 
-    if (!detectedType || detectedType !== req.file.mimetype) {
+    if (!detectedType) {
       fs.unlinkSync(filePath)
-      return res.json(error('Invalid image file'))
+      return res.json(error('图片文件无效'))
+    }
+
+    if (req.file.mimetype && !req.file.mimetype.startsWith('image/')) {
+      fs.unlinkSync(filePath)
+      return res.json(error('仅支持图片文件'))
     }
 
     const fileUrl = `${req.protocol}://${req.get('host')}/uploads/${req.file.filename}`
     res.json(success({ url: fileUrl }))
   } catch (err) {
-    console.error('Upload failed:', err)
-    res.json(error('Upload failed'))
+    console.error('上传失败:', err)
+    res.json(error('上传失败'))
   }
 })
 

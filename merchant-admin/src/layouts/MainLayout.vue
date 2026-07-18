@@ -3,7 +3,7 @@
     <el-container>
       <el-aside width="200px">
         <div class="logo">
-          <h2>Merchant Admin</h2>
+          <h2>商家后台</h2>
         </div>
         <el-menu
           :default-active="activeMenu"
@@ -14,31 +14,39 @@
         >
           <el-menu-item index="/dashboard">
             <el-icon><DataAnalysis /></el-icon>
-            <span>Dashboard</span>
+            <span>工作台</span>
           </el-menu-item>
           <el-menu-item index="/tasks">
             <el-icon><List /></el-icon>
-            <span>Tasks</span>
+            <span>任务管理</span>
           </el-menu-item>
           <el-menu-item index="/submissions">
             <el-icon><Document /></el-icon>
-            <span>Submissions</span>
+            <span>提交审核</span>
           </el-menu-item>
           <el-menu-item index="/withdrawals">
             <el-icon><Money /></el-icon>
-            <span>Withdrawals</span>
+            <span>提现审核</span>
           </el-menu-item>
           <el-menu-item index="/recharges">
             <el-icon><Coin /></el-icon>
-            <span>Recharges</span>
+            <span>充值管理</span>
           </el-menu-item>
           <el-menu-item index="/audit-logs">
             <el-icon><Tickets /></el-icon>
-            <span>Audit Logs</span>
+            <span>操作日志</span>
           </el-menu-item>
           <el-menu-item index="/risk-users">
             <el-icon><Warning /></el-icon>
-            <span>Risk Users</span>
+            <span>风险用户</span>
+          </el-menu-item>
+          <el-menu-item index="/users">
+            <el-icon><UserFilled /></el-icon>
+            <span>用户权限</span>
+          </el-menu-item>
+          <el-menu-item index="/staffs">
+            <el-icon><User /></el-icon>
+            <span>员工管理</span>
           </el-menu-item>
         </el-menu>
       </el-aside>
@@ -48,19 +56,19 @@
           <div class="header-content">
             <div class="breadcrumb">
               <el-breadcrumb separator="/">
-                <el-breadcrumb-item :to="{ path: '/' }">Home</el-breadcrumb-item>
+                <el-breadcrumb-item :to="{ path: '/' }">首页</el-breadcrumb-item>
                 <el-breadcrumb-item>{{ currentPageTitle }}</el-breadcrumb-item>
               </el-breadcrumb>
             </div>
             <div class="user-info">
               <el-dropdown @command="handleCommand">
                 <span class="user-name">
-                  {{ authStore.userInfo.username }}
+                  {{ authStore.userInfo.username || '管理员' }}
                   <el-icon><ArrowDown /></el-icon>
                 </span>
                 <template #dropdown>
                   <el-dropdown-menu>
-                    <el-dropdown-item command="logout">Logout</el-dropdown-item>
+                    <el-dropdown-item command="logout">退出登录</el-dropdown-item>
                   </el-dropdown-menu>
                 </template>
               </el-dropdown>
@@ -81,7 +89,7 @@ import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { ElMessageBox } from 'element-plus'
-import { ArrowDown, Coin, DataAnalysis, Document, List, Money, Tickets, Warning } from '@element-plus/icons-vue'
+import { ArrowDown, Coin, DataAnalysis, Document, List, Money, Tickets, User, UserFilled, Warning } from '@element-plus/icons-vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -91,22 +99,24 @@ const activeMenu = computed(() => route.path)
 
 const currentPageTitle = computed(() => {
   const titles = {
-    '/dashboard': 'Dashboard',
-    '/tasks': 'Tasks',
-    '/submissions': 'Submissions',
-    '/withdrawals': 'Withdrawals',
-    '/recharges': 'Recharges',
-    '/audit-logs': 'Audit Logs',
-    '/risk-users': 'Risk Users'
+    '/dashboard': '工作台',
+    '/tasks': '任务管理',
+    '/submissions': '提交审核',
+    '/withdrawals': '提现审核',
+    '/recharges': '充值管理',
+    '/audit-logs': '操作日志',
+    '/risk-users': '风险用户',
+    '/users': '用户权限',
+    '/staffs': '员工管理'
   }
   return titles[route.path] || ''
 })
 
 const handleCommand = (command) => {
   if (command === 'logout') {
-    ElMessageBox.confirm('Confirm logout?', 'Hint', {
-      confirmButtonText: 'Confirm',
-      cancelButtonText: 'Cancel',
+    ElMessageBox.confirm('确认退出登录吗？', '提示', {
+      confirmButtonText: '确定',
+      cancelButtonText: '取消',
       type: 'warning'
     }).then(() => {
       authStore.logout()

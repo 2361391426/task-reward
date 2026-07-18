@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <view class="container">
     <view class="hero card">
       <view class="hero-copy">
@@ -12,6 +12,11 @@
     <view v-if="riskBlocked" class="risk-banner card">
       <text class="risk-title">当前账号已被标记，禁止接单</text>
       <text class="risk-desc">{{ riskReason || '系统检测到异常身份关联，请联系后台处理。' }}</text>
+    </view>
+
+    <view v-if="claimReminderVisible" class="deadline-banner card">
+      <text class="deadline-title">请在 1 小时内提交截图</text>
+      <text class="deadline-desc">剩余时间：{{ claimCountdownText }}，超时后任务将自动释放，今日无法再次接单。</text>
     </view>
 
     <view class="draft card">
@@ -28,11 +33,14 @@
     <view class="steps">
       <view v-for="(step, index) in uploadSteps" :key="step.id" class="step card">
         <view class="step-head">
-          <view>
+          <view class="step-head-main">
             <text class="step-title">{{ step.name }}</text>
             <text class="step-sub">请按要求上传对应截图</text>
           </view>
-          <text class="step-count">{{ step.images.length }}/{{ step.count }}</text>
+          <view class="step-head-side">
+            <text class="step-count">{{ step.images.length }}/{{ step.count }}</text>
+            <text v-if="getStepHint(step)" class="step-hint">{{ getStepHint(step) }}</text>
+          </view>
         </view>
 
         <view class="image-list">
@@ -59,27 +67,33 @@
       <text class="section-title">联系信息</text>
       <input
         class="input"
-        type="number"
-        maxlength="11"
-        placeholder="请输入手机号"
+        type="text"
+        placeholder="请输入微信号，支持复制粘贴"
+        v-model="wechatId"
+      />
+      <input
+        class="input"
+        type="text"
+        placeholder="请输入手机号，支持复制粘贴"
         v-model="phoneNumber"
       />
       <input
         class="input"
         type="text"
-        placeholder="请输入常用地址用于风控校验"
-        v-model="addressText"
+        placeholder="请输入订单号，支持复制粘贴"
+        v-model="orderNumber"
       />
       <input
         class="input"
-        type="digit"
-        placeholder="请输入实付金额"
+        type="text"
+        inputmode="decimal"
+        placeholder="请输入实付款"
         v-model="paidAmount"
       />
     </view>
 
     <view class="footer">
-      <button class="btn-primary" @click="submitTask" :disabled="!canSubmit || submitting">
+      <button class="btn-primary" @click="submitTask" :disabled="submitting" :loading="submitting">
         {{ submitting ? '提交中...' : (submissionId ? '重新提交审核' : '提交审核') }}
       </button>
     </view>
@@ -88,26 +102,27 @@
 
 <script>
 import { chooseAndUploadImage } from '../../utils/upload.js'
-import { submitTask, resubmitTask, getSubmissionDetail, invalidateTaskCache } from '../../api/task.js'
+import { submitTask, resubmitTask, getSubmissionDetail, getTaskDetail, invalidateTaskCache } from '../../api/task.js'
 import { createDraftScheduler } from '../../utils/draft.js'
+import { clearStartedTaskDraft } from '../../utils/started-task-draft.js'
+import { createEmptyUploadSteps, hydrateUploadSteps, normalizePlatform } from '../../utils/task-submission-steps.js'
 
 export default {
   data() {
     return {
       taskId: '',
       submissionId: '',
+      taskPlatform: '',
+      wechatId: '',
       phoneNumber: '',
-      addressText: '',
+      orderNumber: '',
       paidAmount: '',
       submitting: false,
-      uploadSteps: [
-        { id: 1, name: '搜索关键词截图', count: 1, images: [] },
-        { id: 2, name: '浏览店铺截图', count: 3, images: [] },
-        { id: 3, name: '关注/评论截图', count: 1, images: [] },
-        { id: 4, name: '分享截图', count: 1, images: [] },
-        { id: 5, name: '详情页截图', count: 1, images: [] },
-        { id: 6, name: '加购截图', count: 1, images: [] }
-      ]
+      uploadSteps: [],
+      submissionDetail: null,
+      submissionCompleted: false,
+      nowTs: Date.now(),
+      countdownTimer: null
     }
   },
 
@@ -134,6 +149,27 @@ export default {
       return this.userRisk.risk_reason || ''
     },
 
+    claimExpiresAt() {
+      if (this.submissionCompleted) {
+        return ''
+      }
+
+      const submissionStatus = Number(this.submissionDetail?.review_status ?? this.submissionDetail?.status ?? 0)
+      if (this.submissionId && submissionStatus !== -1) {
+        return ''
+      }
+
+      return this.submissionDetail?.expires_at || this.loadDraftExpiresAt() || ''
+    },
+
+    claimReminderVisible() {
+      return Boolean(this.claimExpiresAt) && !this.submissionCompleted
+    },
+
+    claimCountdownText() {
+      return this.formatCountdown(this.claimExpiresAt)
+    },
+
     draftKey() {
       let userId = 'guest'
       try {
@@ -158,10 +194,47 @@ export default {
 
     canSubmit() {
       const allImagesUploaded = this.uploadSteps.every(step => step.images.length === step.count)
-      const phoneValid = /^1[3-9]\d{9}$/.test(this.phoneNumber)
-      const addressValid = String(this.addressText || '').trim().length > 0
+      const wechatValid = String(this.wechatId || '').trim().length > 0
+      const phoneValid = /^1[3-9]\d{9}$/.test(String(this.phoneNumber || '').trim())
+      const orderValid = String(this.orderNumber || '').trim().length > 0
       const paidValid = Number(this.paidAmount) > 0
-      return allImagesUploaded && phoneValid && addressValid && paidValid && !this.riskBlocked
+      return allImagesUploaded && wechatValid && phoneValid && orderValid && paidValid && !this.riskBlocked
+    },
+
+    validationMessage() {
+      if (this.riskBlocked) {
+        return this.riskReason || '当前账号已被标记，禁止接单'
+      }
+
+      const missingStep = this.uploadSteps.find(step => step.images.length < step.count)
+      if (missingStep) {
+        const remain = missingStep.count - missingStep.images.length
+        return `${missingStep.name}还差${remain}张截图`
+      }
+
+      if (!String(this.wechatId || '').trim()) {
+        return '请填写微信号'
+      }
+
+      if (!/^1[3-9]\d{9}$/.test(String(this.phoneNumber || '').trim())) {
+        return '请填写正确的手机号'
+      }
+
+      if (!String(this.orderNumber || '').trim()) {
+        return '请填写订单号'
+      }
+
+      if (!(Number(this.paidAmount) > 0)) {
+        return '请填写正确的实付款'
+      }
+
+      return ''
+    },
+
+    firstMissingStepHint() {
+      const missingStep = this.uploadSteps.find(step => step.images.length < step.count)
+      if (!missingStep) return ''
+      return this.getStepHint(missingStep)
     }
   },
 
@@ -170,7 +243,11 @@ export default {
       this.scheduleSaveDraft()
     },
 
-    addressText() {
+    wechatId() {
+      this.scheduleSaveDraft()
+    },
+
+    orderNumber() {
       this.scheduleSaveDraft()
     },
 
@@ -189,22 +266,19 @@ export default {
   onLoad(options) {
     this.taskId = options.taskId || ''
     this.submissionId = options.submissionId || ''
-
-    if (this.loadDraft()) {
-      return
-    }
-
-    if (this.submissionId) {
-      this.loadSubmissionData()
-    }
+    this.bootstrapPage()
   },
-
+  onShow() {
+    this.startCountdownTimer()
+  },
   onHide() {
     this.flushDraftSave()
+    this.stopCountdownTimer()
   },
 
   onUnload() {
     this.flushDraftSave()
+    this.stopCountdownTimer()
   },
 
   async onPullDownRefresh() {
@@ -220,17 +294,85 @@ export default {
   },
 
   methods: {
+    async bootstrapPage() {
+      try {
+        const token = uni.getStorageSync('token')
+        if (!token) {
+          uni.showToast({ title: '请先登录后再接单', icon: 'none' })
+          uni.switchTab({ url: '/pages/my/index' })
+          return
+        }
+      } catch (error) {}
+
+      await this.loadTaskContext()
+
+      if (this.loadDraft()) {
+        return
+      }
+
+      this.fillPhoneFromCache()
+
+      if (this.submissionId) {
+        await this.loadSubmissionData()
+      }
+    },
+
+    async loadTaskContext() {
+      try {
+        if (this.submissionId) {
+          const submission = await getSubmissionDetail(this.submissionId)
+          this.submissionDetail = submission || null
+          this.taskPlatform = normalizePlatform(submission?.platform || this.taskPlatform)
+          this.resetUploadSteps()
+          return
+        }
+
+        if (this.taskId) {
+          const task = await getTaskDetail(this.taskId)
+          this.taskPlatform = normalizePlatform(task?.platform || this.taskPlatform)
+          this.resetUploadSteps()
+          return
+        }
+      } catch (error) {
+        console.error('加载任务上下文失败', error)
+      }
+
+      this.taskPlatform = normalizePlatform(this.taskPlatform)
+      this.resetUploadSteps()
+    },
+
+    loadDraftExpiresAt() {
+      try {
+        const raw = uni.getStorageSync(this.draftKey)
+        if (!raw) return ''
+        const draft = typeof raw === 'string' ? JSON.parse(raw) : raw
+        return draft?.expires_at || ''
+      } catch (error) {
+        return ''
+      }
+    },
+
+    resetUploadSteps(draftSteps = []) {
+      this.uploadSteps = draftSteps.length
+        ? hydrateUploadSteps(this.taskPlatform, draftSteps)
+        : createEmptyUploadSteps(this.taskPlatform)
+    },
+
     buildDraftPayload() {
       return {
         taskId: this.taskId,
         submissionId: this.submissionId,
+        taskPlatform: this.taskPlatform,
+        wechatId: this.wechatId,
         phoneNumber: this.phoneNumber,
-        addressText: this.addressText,
+        orderNumber: this.orderNumber,
         paidAmount: this.paidAmount,
         uploadSteps: this.uploadSteps.map(step => ({
           id: step.id,
+          key: step.key,
           name: step.name,
           count: step.count,
+          fieldNames: Array.isArray(step.fieldNames) ? [...step.fieldNames] : [],
           images: [...step.images]
         }))
       }
@@ -239,16 +381,24 @@ export default {
     applyDraft(draft) {
       if (!draft || !Array.isArray(draft.uploadSteps)) return false
 
+      if (draft.taskPlatform) {
+        this.taskPlatform = normalizePlatform(draft.taskPlatform)
+      }
+      this.wechatId = draft.wechatId || ''
       this.phoneNumber = draft.phoneNumber || ''
-      this.addressText = draft.addressText || ''
+      this.orderNumber = draft.orderNumber || ''
       this.paidAmount = draft.paidAmount || ''
-      this.uploadSteps = draft.uploadSteps.map(step => ({
-        id: step.id,
-        name: step.name,
-        count: step.count,
-        images: Array.isArray(step.images) ? step.images : []
-      }))
+      this.resetUploadSteps(draft.uploadSteps)
       return true
+    },
+
+    fillPhoneFromCache() {
+      try {
+        const cachedPhone = uni.getStorageSync('task-reward:phone-number')
+        if (cachedPhone && !this.phoneNumber) {
+          this.phoneNumber = String(cachedPhone)
+        }
+      } catch (error) {}
     },
 
     loadDraft() {
@@ -291,13 +441,15 @@ export default {
       try {
         uni.showLoading({ title: '加载中...' })
         const res = await getSubmissionDetail(this.submissionId)
-        this.uploadSteps[0].images = [res.screenshot_search].filter(Boolean)
-        this.uploadSteps[1].images = [res.screenshot_shop_1, res.screenshot_shop_2, res.screenshot_shop_3].filter(Boolean)
-        this.uploadSteps[2].images = [res.screenshot_follow].filter(Boolean)
-        this.uploadSteps[3].images = [res.screenshot_share].filter(Boolean)
-        this.uploadSteps[4].images = [res.screenshot_detail].filter(Boolean)
-        this.uploadSteps[5].images = [res.screenshot_cart].filter(Boolean)
+        this.taskPlatform = normalizePlatform(res.platform || this.taskPlatform)
+        this.resetUploadSteps()
+        this.uploadSteps = this.uploadSteps.map((step) => ({
+          ...step,
+          images: (step.fieldNames || []).map((fieldName) => res[fieldName]).filter(Boolean).slice(0, step.count)
+        }))
+        this.wechatId = res.wechat_id || ''
         this.phoneNumber = res.phone_number || ''
+        this.orderNumber = res.order_number || ''
         this.paidAmount = res.paid_amount ? String(res.paid_amount) : ''
         this.saveDraft()
       } catch (error) {
@@ -349,7 +501,7 @@ export default {
 
       if (!this.canSubmit) {
         uni.showToast({
-          title: '请完善所有信息',
+          title: this.validationMessage || '请完善所有信息',
           icon: 'none'
         })
         return
@@ -361,41 +513,94 @@ export default {
 
         const data = {
           task_id: this.taskId,
+          wechat_id: this.wechatId,
           phone_number: this.phoneNumber,
-          address_text: this.addressText,
-          paid_amount: Number(this.paidAmount),
-          screenshot_search: this.uploadSteps[0].images[0],
-          screenshot_shop_1: this.uploadSteps[1].images[0],
-          screenshot_shop_2: this.uploadSteps[1].images[1],
-          screenshot_shop_3: this.uploadSteps[1].images[2],
-          screenshot_follow: this.uploadSteps[2].images[0],
-          screenshot_share: this.uploadSteps[3].images[0],
-          screenshot_detail: this.uploadSteps[4].images[0],
-          screenshot_cart: this.uploadSteps[5].images[0]
+          order_number: this.orderNumber,
+          paid_amount: Number(this.paidAmount)
         }
+
+        this.uploadSteps.forEach((step) => {
+          (step.fieldNames || []).forEach((fieldName, index) => {
+            data[fieldName] = step.images[index] || ''
+          })
+        })
 
         if (this.submissionId) {
           await resubmitTask(this.submissionId, data)
         } else {
-          await submitTask(data)
+          const res = await submitTask(data)
+          if (res?.submission_id) {
+            this.submissionId = String(res.submission_id)
+          }
         }
 
         invalidateTaskCache()
         this.clearDraft()
+        clearStartedTaskDraft(this.taskId)
+        this.submissionCompleted = true
+        this.submissionDetail = null
+        this.stopCountdownTimer()
         uni.showToast({
           title: '提交成功',
           icon: 'success'
         })
 
         setTimeout(() => {
+          if (this.submissionId) {
+            uni.redirectTo({
+              url: `/pages/submission-detail/index?id=${this.submissionId}`
+            })
+            return
+          }
           uni.navigateBack()
         }, 1500)
       } catch (error) {
         console.error('提交失败', error)
+        uni.showToast({
+          title: error?.message || '提交失败，请重试',
+          icon: 'none'
+        })
       } finally {
         this.submitting = false
         uni.hideLoading()
       }
+    },
+
+    formatCountdown(targetTime) {
+      if (!targetTime) return '已过期'
+      const target = new Date(targetTime).getTime()
+      if (Number.isNaN(target)) return '已过期'
+      const diff = target - this.nowTs
+      if (diff <= 0) return '已过期'
+      const totalMinutes = Math.ceil(diff / 60000)
+      const hours = Math.floor(totalMinutes / 60)
+      const minutes = totalMinutes % 60
+      if (hours > 0) {
+        return `${hours}小时${minutes}分钟`
+      }
+      return `${minutes}分钟`
+    },
+
+    startCountdownTimer() {
+      if (this.countdownTimer) return
+      this.nowTs = Date.now()
+      this.countdownTimer = setInterval(() => {
+        this.nowTs = Date.now()
+      }, 30000)
+    },
+
+    stopCountdownTimer() {
+      if (!this.countdownTimer) return
+      clearInterval(this.countdownTimer)
+      this.countdownTimer = null
+      this.nowTs = Date.now()
+    },
+
+    getStepHint(step) {
+      if (!step || !Array.isArray(step.images)) return ''
+      const remain = Math.max(Number(step.count || 0) - step.images.length, 0)
+      if (remain <= 0) return ''
+      return `还差${remain}张`
     }
   }
 }
@@ -478,6 +683,29 @@ export default {
   line-height: 34rpx;
 }
 
+.deadline-banner {
+  background: linear-gradient(135deg, #fff7ed 0%, #ffedd5 100%);
+  border: 1rpx solid rgba(249, 115, 22, 0.22);
+  padding: 22rpx 24rpx;
+  margin-bottom: 20rpx;
+  box-shadow: 0 12rpx 28rpx rgba(249, 115, 22, 0.12);
+}
+
+.deadline-title {
+  display: block;
+  font-size: 30rpx;
+  font-weight: 700;
+  color: #c2410c;
+  margin-bottom: 8rpx;
+}
+
+.deadline-desc {
+  display: block;
+  font-size: 24rpx;
+  color: #9a3412;
+  line-height: 34rpx;
+}
+
 .draft {
   padding: 22rpx 24rpx;
   margin-bottom: 20rpx;
@@ -521,6 +749,19 @@ export default {
   margin-bottom: 20rpx;
 }
 
+.step-head-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.step-head-side {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8rpx;
+  flex-shrink: 0;
+}
+
 .step-title {
   display: block;
   font-size: 30rpx;
@@ -542,6 +783,18 @@ export default {
   padding: 8rpx 14rpx;
   border-radius: 999rpx;
   flex-shrink: 0;
+}
+
+.step-hint {
+  display: inline-flex;
+  align-items: center;
+  font-size: 22rpx;
+  line-height: 1;
+  color: #b45309;
+  background: #fffbeb;
+  border: 1rpx solid rgba(245, 158, 11, 0.24);
+  padding: 6rpx 12rpx;
+  border-radius: 999rpx;
 }
 
 .image-list {

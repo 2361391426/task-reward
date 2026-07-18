@@ -2,11 +2,12 @@
 const router = express.Router()
 const { query, queryOne, insert, update, withTransaction } = require('../lib/db-json')
 const jwt = require('jsonwebtoken')
-const { encrypt, decrypt } = require('../lib/crypto')
+const { encrypt, decrypt, maskPhone } = require('../lib/crypto')
+const { getPhoneNumberFromCode } = require('../lib/wechat-miniapp')
 
-const success = (data) => ({ code: 0, data, message: 'success' })
+const success = (data) => ({ code: 0, data, message: '成功' })
 const error = (message) => ({ code: -1, data: null, message })
-const authError = (res, message = 'Not logged in') => res.status(401).json(error(message))
+const authError = (res, message = '未登录') => res.status(401).json(error(message))
 
 const withdrawalLocks = new Set()
 const MAX_LOGIN_ATTEMPTS = 10
@@ -123,6 +124,9 @@ const safeDecrypt = (value) => {
   }
 }
 
+const normalizePhone = (value) => String(value || '').replace(/\D/g, '').trim()
+const isValidPhone = (value) => /^1\d{10}$/.test(value)
+
 const getLoginUserId = (req) => {
   const token = req.headers.authorization?.replace('Bearer ', '')
   if (!token) return null
@@ -136,7 +140,7 @@ const getLoginUserId = (req) => {
 
 router.post('/login', async (req, res) => {
   try {
-    const { code } = req.body
+    const { code, nickname, avatar } = req.body
     const loginKey = getLoginKey(req)
     const loginState = getLoginState(loginKey)
     if (loginState.lockedUntil && loginState.lockedUntil > Date.now()) {
@@ -157,6 +161,29 @@ router.post('/login', async (req, res) => {
       })
     }
 
+    const nextNickname = String(nickname || '').trim()
+    const nextAvatar = String(avatar || '').trim()
+    if (nextNickname || nextAvatar) {
+      const updates = {}
+      if (nextNickname) {
+        updates.nickname = nextNickname
+        user.nickname = nextNickname
+      }
+      if (nextAvatar) {
+        updates.avatar = nextAvatar
+        user.avatar = nextAvatar
+      }
+      if (Object.keys(updates).length > 0) {
+        update('users', { id: user.id }, updates)
+      }
+    }
+
+    let phone = null
+    if (user.phone) {
+      const decryptedPhone = safeDecrypt(user.phone)
+      phone = decryptedPhone ? maskPhone(decryptedPhone) : null
+    }
+
     const risk = getRiskSnapshot(user.id)
     clearLoginAttempts(loginKey)
 
@@ -170,6 +197,7 @@ router.post('/login', async (req, res) => {
       token,
       user: {
         ...user,
+        phone,
         ...risk
       }
     }))
@@ -189,14 +217,11 @@ router.get('/info', async (req, res) => {
 
     const user = queryOne('users', { id: userId })
     if (!user) {
-      return res.json(error('User not found'))
+      return res.json(error('用户不存在'))
     }
 
-    let phone = null
-    if (user.phone) {
-      const decryptedPhone = safeDecrypt(user.phone)
-      phone = decryptedPhone ? `${decryptedPhone.slice(0, 3)}****${decryptedPhone.slice(-4)}` : null
-    }
+    const decryptedPhone = user.phone ? safeDecrypt(user.phone) : ''
+    const phone = decryptedPhone ? `${decryptedPhone.slice(0, 3)}****${decryptedPhone.slice(-4)}` : null
 
     const risk = getRiskSnapshot(user.id)
 
@@ -205,6 +230,7 @@ router.get('/info', async (req, res) => {
       nickname: user.nickname,
       avatar: user.avatar,
       phone,
+      phone_raw: decryptedPhone || '',
       total_earnings: parseFloat(user.total_earnings || 0),
       available_balance: parseFloat(user.available_balance || 0),
       frozen_balance: parseFloat(user.frozen_balance || 0),
@@ -213,6 +239,91 @@ router.get('/info', async (req, res) => {
   } catch (err) {
     console.error('Get user info failed:', err)
     res.json(error('Get user info failed'))
+  }
+})
+
+router.put('/info', async (req, res) => {
+  try {
+    const userId = getLoginUserId(req)
+    if (!userId) {
+      return authError(res)
+    }
+
+    const nickname = String(req.body?.nickname || '').trim()
+    const avatar = String(req.body?.avatar || '').trim()
+    const phoneInput = normalizePhone(req.body?.phone)
+    const updates = {}
+
+    if (nickname) {
+      updates.nickname = nickname
+    }
+
+    if (avatar) {
+      updates.avatar = avatar
+    }
+
+    if (phoneInput) {
+      if (!isValidPhone(phoneInput)) {
+        return res.json(error('请输入正确的11位手机号'))
+      }
+      updates.phone = encrypt(phoneInput)
+    }
+
+    if (Object.keys(updates).length > 0) {
+      updates.updated_at = new Date().toISOString()
+      update('users', { id: userId }, updates)
+    }
+
+    const user = queryOne('users', { id: userId })
+    const risk = getRiskSnapshot(userId)
+
+    const decryptedPhone = user?.phone ? safeDecrypt(user.phone) : ''
+    const phone = decryptedPhone ? maskPhone(decryptedPhone) : null
+
+    res.json(success({
+      id: user.id,
+      nickname: user.nickname,
+      avatar: user.avatar,
+      phone,
+      phone_raw: decryptedPhone || '',
+      total_earnings: parseFloat(user.total_earnings || 0),
+      available_balance: parseFloat(user.available_balance || 0),
+      frozen_balance: parseFloat(user.frozen_balance || 0),
+      publish_permission: parseInt(user.publish_permission || 0, 10) || 0,
+      ...risk
+    }))
+  } catch (err) {
+    console.error('Update user info failed:', err)
+    res.json(error('Update user info failed'))
+  }
+})
+
+router.post('/phone', async (req, res) => {
+  try {
+    const userId = getLoginUserId(req)
+    if (!userId) {
+      return authError(res)
+    }
+
+    const code = String(req.body?.code || '').trim()
+    if (!code) {
+      return res.json(error('缺少手机号授权码'))
+    }
+
+    const phoneInfo = await getPhoneNumberFromCode(code)
+    const encryptedPhone = encrypt(phoneInfo.phoneNumber)
+    update('users', { id: userId }, {
+      phone: encryptedPhone
+    })
+
+    res.json(success({
+      phone: phoneInfo.phoneNumber,
+      masked_phone: maskPhone(phoneInfo.phoneNumber),
+      phone_raw: phoneInfo.phoneNumber
+    }))
+  } catch (err) {
+    console.error('Bind phone failed:', err)
+    res.json(error(err.message || '手机号绑定失败'))
   }
 })
 
@@ -225,7 +336,7 @@ router.get('/earnings', async (req, res) => {
 
     const user = queryOne('users', { id: userId })
     if (!user) {
-      return res.json(error('User not found'))
+      return res.json(error('用户不存在'))
     }
 
     res.json(success({
@@ -295,7 +406,7 @@ router.post('/withdrawals', async (req, res) => {
       return res.json(error('Invalid withdrawal method'))
     }
     if (!accountInfo) {
-      return res.json(error('Account information is required'))
+      return res.json(error('请填写账号信息'))
     }
 
     const minAmount = 10

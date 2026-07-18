@@ -1,8 +1,8 @@
-<template>
+﻿<template>
   <view class="container">
     <view class="stats-card card">
       <view class="stats-item">
-        <text class="stats-value">{{ totalTasks }}</text>
+        <text class="stats-value">{{ visibleTaskCount }}</text>
         <text class="stats-label">可接任务</text>
       </view>
       <view class="stats-item">
@@ -28,7 +28,12 @@
 
     <view v-if="riskBlocked()" class="risk-panel">
       <text class="risk-title">当前账号已被标记，禁止接单</text>
-      <text class="risk-text">{{ riskReason() || '系统检测到异常身份关联，请联系后台处理。' }}</text>
+      <text class="risk-text">{{ riskReason() || '系统检测到异常身份关联，请联系后台处理' }}</text>
+    </view>
+
+    <view v-if="publishBlocked()" class="risk-panel">
+      <text class="risk-title">当前账号为发单账号，仅可查看任务详情</text>
+      <text class="risk-text">请到“我的发单”查看自己发布的任务和订单状态，不能在大厅接单。</text>
     </view>
 
     <view v-if="loadError" class="error-panel">
@@ -37,10 +42,10 @@
       <button class="btn-secondary" @click="retryLoad">重试</button>
     </view>
 
-    <view class="task-list" v-if="!loading && taskList.length">
+    <view class="task-list" v-if="!loading && visibleTaskList.length">
       <view
         class="task-card card"
-        v-for="task in taskList"
+        v-for="task in visibleTaskList"
         :key="task.id"
         @click="goToDetail(task.id)"
       >
@@ -66,16 +71,16 @@
       </view>
     </view>
 
-    <view v-if="!loading && taskList.length && (loadingMore || taskHasMore)" class="load-more">
+    <view v-if="!loading && visibleTaskList.length && (loadingMore || taskHasMore)" class="load-more">
       <text v-if="loadingMore">加载更多中...</text>
       <text v-else>上拉加载更多</text>
     </view>
 
-    <view v-if="!loading && taskList.length && !taskHasMore" class="load-more">
+    <view v-if="!loading && visibleTaskList.length && !taskHasMore" class="load-more">
       <text>没有更多任务了</text>
     </view>
 
-    <view v-if="!loading && taskList.length === 0" class="empty">
+    <view v-if="!loading && visibleTaskList.length === 0" class="empty">
       <image class="empty-illustration" src="/static/images/empty-task.png" mode="aspectFit" />
       <text>暂无任务</text>
     </view>
@@ -92,6 +97,8 @@ import { getTaskList, getMySubmissions } from '../../api/task.js'
 import { getEarnings, getUserInfo } from '../../api/user.js'
 import { formatTime, platformText, submissionStatusText } from '../../utils/format.js'
 
+const IS_DEV = import.meta.env.DEV
+
 export default {
   data() {
     return {
@@ -104,6 +111,7 @@ export default {
       taskPageSize: 10,
       taskHasMore: true,
       currentPlatform: '',
+      platformStorageKey: 'task-reward:last-platform',
       platformTabs: [
         { label: '全部', value: '' },
         { label: '淘宝', value: 'taobao' },
@@ -118,6 +126,7 @@ export default {
   },
 
   onShow() {
+    this.restorePlatformFilter()
     this.refreshData(true)
   },
 
@@ -144,20 +153,69 @@ export default {
     }
   },
 
+  computed: {
+    visibleTaskList() {
+      return this.taskList.filter(task => !this.shouldHideTask(task))
+    },
+
+    visibleTaskCount() {
+      return this.visibleTaskList.length
+    }
+  },
+
   methods: {
+    sortTasksNewestFirst(list = []) {
+      return [...list].sort((a, b) => {
+        const aTime = new Date(a.created_at || a.createdAt || a.start_time || a.end_time || 0).getTime()
+        const bTime = new Date(b.created_at || b.createdAt || b.start_time || b.end_time || 0).getTime()
+        if (Number.isFinite(aTime) && Number.isFinite(bTime) && aTime !== bTime) {
+          return bTime - aTime
+        }
+        return Number(b.id || 0) - Number(a.id || 0)
+      })
+    },
+
+    filterTasksByPlatform(list = []) {
+      if (!this.currentPlatform) {
+        return list
+      }
+      return list.filter(task => String(task.platform || '') === this.currentPlatform)
+    },
+
     async refreshData() {
       this.loadError = ''
       this.taskPage = 1
       this.taskHasMore = true
+      if (IS_DEV) {
+        this.applyMockData()
+        this.loading = false
+        this.loadingMore = false
+        return
+      }
       try {
         const taskLoaded = await this.loadTasks(true)
         const visibleTaskIds = this.taskList.map(task => String(task.id)).filter(Boolean)
-        const [statsLoaded, submissionsLoaded] = await Promise.all([
-          this.loadUserInfo(),
-          this.loadUserStats(),
-          this.loadMySubmissions(true, visibleTaskIds)
-        ])
-        if ((!taskLoaded || !statsLoaded || !submissionsLoaded) && !this.loadError) {
+        const hasToken = this.isLoggedIn()
+        let statsLoaded = true
+        let submissionsLoaded = true
+
+        if (hasToken) {
+          const [userLoaded, earningsLoaded, submissionLoaded] = await Promise.all([
+            this.loadUserInfo(),
+            this.loadUserStats(),
+            this.loadMySubmissions(true, visibleTaskIds)
+          ])
+          statsLoaded = userLoaded && earningsLoaded
+          submissionsLoaded = submissionLoaded
+        } else {
+          this.userInfo = {}
+          this.totalEarnings = 0
+          this.submissionMap = {}
+        }
+
+        if (!taskLoaded && !this.loadError) {
+          this.loadError = '首页任务加载失败，请重试'
+        } else if (hasToken && (!statsLoaded || !submissionsLoaded) && !this.loadError) {
           this.loadError = '部分数据加载失败，请稍后重试'
         }
       } catch (error) {
@@ -166,43 +224,59 @@ export default {
       }
     },
 
-    async loadTasks(reset = false) {
+    async loadTasks(forceRefresh = false) {
+      this.loading = true
+      if (!forceRefresh) {
+        this.loadingMore = true
+      }
       try {
-        const page = reset ? 1 : this.taskPage
-        if (reset) {
-          this.loading = true
-          this.taskList = []
-        } else {
-          this.loadingMore = true
-        }
         const params = {
-          status: 1,
-          page,
+          page: this.taskPage,
           page_size: this.taskPageSize
         }
         if (this.currentPlatform) {
           params.platform = this.currentPlatform
         }
-        const res = await getTaskList(params, { forceRefresh: reset })
+        const res = await getTaskList(params, { forceRefresh })
         const list = Array.isArray(res && res.list) ? res.list : []
-        this.totalTasks = res && typeof res.total === 'number' ? res.total : this.taskList.length + list.length
-        this.taskList = reset ? list : this.taskList.concat(list)
-        const pageSize = res && typeof res.page_size === 'number' ? res.page_size : this.taskPageSize
-        this.taskPage = page + 1
-        this.taskHasMore = this.taskList.length < this.totalTasks && list.length >= pageSize
+        const normalizedList = this.filterTasksByPlatform(list)
+        const nextTaskList = forceRefresh
+          ? normalizedList
+          : this.taskList.concat(normalizedList)
+
+        this.taskList = this.sortTasksNewestFirst(nextTaskList)
+        this.totalTasks = Number(res && (res.total ?? res.count)) || this.taskList.length
+        const pageSize = Number(res && res.page_size) || this.taskPageSize
+        const totalCount = Number(res && (res.total ?? res.count))
+        if (Number.isFinite(totalCount)) {
+          this.taskHasMore = this.taskList.length < totalCount
+        } else {
+          this.taskHasMore = normalizedList.length >= pageSize
+        }
+        this.taskPage += 1
+        this.loading = false
+        this.loadingMore = false
         return true
       } catch (error) {
         console.error('加载任务失败', error)
-        this.loadError = this.loadError || '首页任务加载失败，请重试'
-        return false
-      } finally {
         this.loading = false
         this.loadingMore = false
+        this.taskHasMore = false
+        this.loadError = this.loadError || '首页任务加载失败，请重试'
+        return false
       }
     },
 
     async loadUserStats() {
       try {
+        if (!this.isLoggedIn()) {
+          this.totalEarnings = 0
+          return true
+        }
+        if (IS_DEV) {
+          this.totalEarnings = 0
+          return true
+        }
         const res = await getEarnings()
         this.totalEarnings = Number(res && res.total_earnings) || 0
         return true
@@ -215,6 +289,17 @@ export default {
 
     async loadUserInfo() {
       try {
+        if (!this.isLoggedIn()) {
+          this.userInfo = {}
+          return true
+        }
+        if (IS_DEV) {
+          const cached = uni.getStorageSync('userInfo')
+          this.userInfo = cached
+            ? (typeof cached === 'string' ? JSON.parse(cached) : cached)
+            : {}
+          return true
+        }
         const res = await getUserInfo()
         this.userInfo = res || {}
         try {
@@ -222,13 +307,24 @@ export default {
         } catch (error) {}
         return true
       } catch (error) {
-        console.error('鍔犺浇鐢ㄦ埛淇℃伅澶辫触', error)
+        console.error('加载用户信息失败', error)
+        if (!this.isLoggedIn()) {
+          this.userInfo = {}
+          return true
+        }
         return false
       }
     },
 
     async loadMySubmissions(forceRefresh = false, targetTaskIds = []) {
       try {
+        if (IS_DEV) {
+          this.submissionMap = {
+            1: { task_id: 1, review_status: 0 },
+            2: { task_id: 2, review_status: 2 }
+          }
+          return true
+        }
         const targetIds = new Set((targetTaskIds || []).map(id => String(id)))
         const submissionMap = {}
 
@@ -317,7 +413,19 @@ export default {
         return
       }
       this.currentPlatform = platform
+      try {
+        uni.setStorageSync(this.platformStorageKey, this.currentPlatform)
+      } catch (error) {}
       this.refreshData(true)
+    },
+
+    restorePlatformFilter() {
+      try {
+        const saved = uni.getStorageSync(this.platformStorageKey)
+        if (typeof saved === 'string' && this.platformTabs.some(tab => tab.value === saved)) {
+          this.currentPlatform = saved
+        }
+      } catch (error) {}
     },
 
     riskBlocked() {
@@ -326,6 +434,23 @@ export default {
 
     riskReason() {
       return this.userInfo?.risk_reason || ''
+    },
+
+    publishBlocked() {
+      return Number(this.userInfo?.publish_permission || 0) === 1
+    },
+
+    shouldHideTask(task) {
+      const submission = this.submissionMap[String(task?.id)]
+      return Number(submission?.review_status) === 1
+    },
+
+    isLoggedIn() {
+      try {
+        return Boolean(uni.getStorageSync('token'))
+      } catch (error) {
+        return false
+      }
     },
 
     remainingQuota(task) {
@@ -338,12 +463,29 @@ export default {
       return Math.max(total - used, 0)
     },
 
+    acceptNotStarted(task) {
+      const startTime = task?.accept_start_time_raw || task?.accept_start_time || task?.start_time_raw || task?.start_time
+      if (!startTime) {
+        return false
+      }
+      return new Date(startTime).getTime() > Date.now()
+    },
+
     taskActionText(task) {
+      if (!this.isLoggedIn()) {
+        return '去登录'
+      }
+      if (this.publishBlocked()) {
+        return '仅查看详情'
+      }
       if (this.riskBlocked()) {
         return '禁止接单'
       }
       const submission = this.submissionMap[String(task.id)]
       if (!submission) {
+        if (this.acceptNotStarted(task)) {
+          return '待接单'
+        }
         return '立即参与'
       }
       const status = Number(submission.review_status)
@@ -359,6 +501,54 @@ export default {
 
     platformText(platform) {
       return platformText(platform)
+    },
+
+    getMockTasks() {
+      return [
+        {
+          id: 1,
+          title: '抖音浏览任务',
+          platform: 'douyin',
+          reward_amount: 3.2,
+          search_keyword: '任务返现',
+          remaining_quota: 5,
+          total_quota: 20,
+          used_quota: 15,
+          end_time: new Date(Date.now() + 86400000).toISOString()
+        },
+        {
+          id: 2,
+          title: '淘宝收藏任务',
+          platform: 'taobao',
+          reward_amount: 2.8,
+          search_keyword: '精选好物',
+          remaining_quota: 3,
+          total_quota: 10,
+          used_quota: 7,
+          end_time: new Date(Date.now() + 172800000).toISOString()
+        }
+      ]
+    },
+
+    applyMockData() {
+      this.userInfo = {
+        nickname: '测试用户',
+        risk_status: 0,
+        total_earnings: 0,
+        available_balance: 0,
+        frozen_balance: 0
+      }
+      this.taskList = this.sortTasksNewestFirst(this.filterTasksByPlatform(this.getMockTasks()))
+      this.totalTasks = this.taskList.length
+      this.totalEarnings = 0
+      this.submissionMap = {
+        1: { task_id: 1, review_status: 0 },
+        2: { task_id: 2, review_status: 2 }
+      }
+      this.totalTasks = this.visibleTaskCount
+      this.loading = false
+      this.loadingMore = false
+      this.hasLoadedData = true
     }
   }
 }
@@ -366,11 +556,12 @@ export default {
 
 <style scoped>
 .stats-card {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
   gap: 20rpx;
   padding: 28rpx;
-  background: linear-gradient(135deg, rgba(102, 126, 234, 0.95), rgba(118, 75, 162, 0.92));
+  background: linear-gradient(135deg, rgba(37, 99, 235, 0.95), rgba(6, 182, 212, 0.92));
   color: #fff;
 }
 
@@ -396,15 +587,17 @@ export default {
 }
 
 .platform-chip.active {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(135deg, #2563eb 0%, #06b6d4 100%);
   color: #fff;
-  box-shadow: 0 10rpx 24rpx rgba(102, 126, 234, 0.18);
+  box-shadow: 0 10rpx 24rpx rgba(37, 99, 235, 0.18);
 }
 
 .stats-item {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
+  flex: 1 1 calc(50% - 10rpx);
+  min-width: 0;
 }
 
 .stats-value {
@@ -422,6 +615,8 @@ export default {
 
 .task-list {
   margin-top: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 .load-more {
@@ -437,6 +632,7 @@ export default {
   margin-bottom: 20rpx;
   overflow: hidden;
   border: 1rpx solid rgba(226, 232, 240, 0.9);
+  width: 100%;
 }
 
 .task-header {
@@ -469,8 +665,8 @@ export default {
 .task-reward {
   padding: 10rpx 18rpx;
   border-radius: 999rpx;
-  box-shadow: 0 10rpx 20rpx rgba(102, 126, 234, 0.18);
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  box-shadow: 0 10rpx 20rpx rgba(37, 99, 235, 0.18);
+  background: linear-gradient(135deg, #2563eb 0%, #06b6d4 100%);
 }
 
 .reward-amount {
@@ -508,16 +704,16 @@ export default {
   border-radius: 999rpx;
   padding: 14rpx 26rpx;
   font-size: 24rpx;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  box-shadow: 0 12rpx 24rpx rgba(102, 126, 234, 0.22);
+  background: linear-gradient(135deg, #2563eb 0%, #06b6d4 100%);
+  box-shadow: 0 12rpx 24rpx rgba(37, 99, 235, 0.22);
   color: #fff;
 }
 
 .stats-visual {
-  grid-column: 1 / -1;
   width: 100%;
   height: 170rpx;
   margin-top: 6rpx;
+  flex: 0 0 100%;
 }
 
 .risk-panel {
@@ -556,3 +752,5 @@ export default {
   margin: 0 auto 20rpx;
 }
 </style>
+
+

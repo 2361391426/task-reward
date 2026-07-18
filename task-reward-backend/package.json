@@ -9,12 +9,15 @@
     "start:local": "node server-local.js",
     "check": "node scripts/check-config.js",
     "backup:local": "node scripts/backup-local.js",
+    "cleanup:uploads": "node scripts/cleanup-uploads.js",
+    "cleanup:uploads:weekly": "node scripts/cleanup-uploads.js --weekly",
     "smoke": "node scripts/smoke-test.js",
     "test:p2": "node scripts/p2-regression-test.js",
     "test": "npm run smoke"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.470.0",
+    "@neondatabase/serverless": "^1.1.0",
     "axios": "^1.6.2",
     "bcryptjs": "^2.4.3",
     "busboy": "^1.6.0",

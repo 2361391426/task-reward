@@ -40,6 +40,26 @@ export const taskStatusTagType = (status) => {
   return map[Number(status)] || 'info'
 }
 
+export const publicationStatusText = (status) => {
+  const map = {
+    pending: '待发布',
+    published: '已发布',
+    ended: '已结束',
+    paused: '已暂停'
+  }
+  return map[status] || '未知'
+}
+
+export const publicationStatusTagType = (status) => {
+  const map = {
+    pending: 'info',
+    published: 'success',
+    ended: 'danger',
+    paused: 'warning'
+  }
+  return map[status] || 'info'
+}
+
 export const submissionStatusText = (status) => {
   const map = {
     0: '待审',

@@ -1,52 +1,61 @@
 <script>
-import { wxLogin, getUserInfo } from './api/user.js'
+import { getUserInfo } from './api/user.js'
+import { resumePendingUploads } from './utils/upload.js'
+
+const IS_DEV = import.meta.env.DEV
 
 export default {
   onLaunch() {
-    this.checkLogin()
+    if (!IS_DEV) {
+      void this.bootstrapApp()
+      resumePendingUploads().catch((error) => {
+        console.error('Resume pending uploads failed', error)
+      })
+    }
   },
   onShow() {},
   onHide() {},
   methods: {
+    async bootstrapApp() {
+      try {
+        await this.checkLogin()
+      } catch (error) {
+        console.error('App bootstrap failed', error)
+      }
+    },
+
+    async syncUserInfo(baseInfo = {}, allowFallback = false) {
+      try {
+        const latestInfo = await getUserInfo()
+        const mergedInfo = {
+          ...(baseInfo || {}),
+          ...(latestInfo || {})
+        }
+        uni.setStorageSync('userInfo', mergedInfo)
+        return mergedInfo
+      } catch (error) {
+        if (allowFallback && baseInfo && Object.keys(baseInfo).length > 0) {
+          uni.setStorageSync('userInfo', baseInfo)
+          return baseInfo
+        }
+        throw error
+      }
+    },
+
     async checkLogin() {
       const token = uni.getStorageSync('token')
       if (!token) {
-        await this.autoLogin()
+        uni.removeStorageSync('userInfo')
         return
       }
 
       try {
-        await getUserInfo()
+        await this.syncUserInfo({}, false)
       } catch (error) {
         uni.removeStorageSync('token')
         uni.removeStorageSync('userInfo')
-        await this.autoLogin()
       }
     },
-
-    autoLogin() {
-      return new Promise((resolve, reject) => {
-        uni.login({
-          success: async (loginRes) => {
-            if (!loginRes.code) {
-              reject(new Error('未获取到登录凭证'))
-              return
-            }
-
-            try {
-              const res = await wxLogin(loginRes.code)
-              uni.setStorageSync('token', res.token)
-              uni.setStorageSync('userInfo', res.user)
-              resolve(res)
-            } catch (error) {
-              console.error('自动登录失败', error)
-              reject(error)
-            }
-          },
-          fail: reject
-        })
-      })
-    }
   }
 }
 </script>

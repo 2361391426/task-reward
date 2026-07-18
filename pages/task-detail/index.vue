@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <view class="container">
     <view class="detail-card card">
       <view class="header">
@@ -22,6 +22,21 @@
       <view v-if="riskBlocked" class="risk-panel">
         <text class="risk-title">当前账号已被标记，禁止接单</text>
         <text class="risk-text">{{ riskReason || '系统检测到异常身份关联，请联系后台处理。' }}</text>
+      </view>
+
+      <view v-if="publishBlocked" class="risk-panel">
+        <text class="risk-title">当前账号为发单账号，仅可查看详情</text>
+        <text class="risk-text">发单账号不能在大厅接单，如需查看订单状态请到“我的发单”。</text>
+      </view>
+
+      <view v-if="acceptNotStarted" class="notice-panel">
+        <text class="notice-title">任务已发布，待接单</text>
+        <text class="notice-text">可接单时间：{{ acceptStartTimeText }}</text>
+      </view>
+
+      <view v-if="taskClaimReminderVisible" class="deadline-panel">
+        <text class="deadline-title">领取后请在 1 小时内提交截图</text>
+        <text class="deadline-text">剩余时间：{{ taskClaimCountdownText }}，超时将自动释放任务，今日无法再次接单。</text>
       </view>
 
       <view class="status-panel" v-if="submission">
@@ -77,6 +92,10 @@
           <text class="label">剩余名额</text>
           <text class="value">{{ remainingQuotaText }}</text>
         </view>
+        <view class="info-item">
+          <text class="label">可接单时间</text>
+          <text class="value">{{ acceptStartTimeText }}</text>
+        </view>
       </view>
 
       <view class="requirements">
@@ -114,9 +133,11 @@
 </template>
 
 <script>
-import { getTaskDetail, getMySubmissions } from '../../api/task.js'
+import { claimTask, getTaskDetail, getMySubmissions } from '../../api/task.js'
 import { getUserInfo } from '../../api/user.js'
 import { formatTime, platformText, submissionStatusText } from '../../utils/format.js'
+import { hasStartedTaskDraft, saveStartedTaskDraft } from '../../utils/started-task-draft.js'
+import { requestTaskSubscribeMessage } from '../../utils/subscribe.js'
 
 export default {
   data() {
@@ -128,7 +149,9 @@ export default {
       submissionLoading: false,
       loadError: '',
       hasLoadedData: false,
-      userInfo: {}
+      userInfo: {},
+      nowTs: Date.now(),
+      countdownTimer: null
     }
   },
 
@@ -152,23 +175,75 @@ export default {
       return `${this.remainingQuota}/${Number(task.total_quota || 0)}`
     },
 
+    acceptStartTimeText() {
+      return this.task?.accept_start_time || this.task?.start_time || '立即可接单'
+    },
+
+    acceptNotStarted() {
+      if (!this.taskId || this.riskBlocked || this.submission) {
+        return false
+      }
+      const startTime = this.task?.accept_start_time_raw || this.task?.accept_start_time || this.task?.start_time_raw || this.task?.start_time
+      if (!startTime) {
+        return false
+      }
+      return new Date(startTime).getTime() > Date.now()
+    },
+
     riskBlocked() {
       return Number(this.userInfo?.risk_status) === 1
+    },
+
+    publishBlocked() {
+      return Number(this.userInfo?.publish_permission || 0) === 1
     },
 
     riskReason() {
       return this.userInfo?.risk_reason || ''
     },
 
+    submissionDraftExpiresAt() {
+      if (!this.submission) return ''
+      if (Number(this.submission.review_status) !== -1) return ''
+      return this.submission.expires_at || this.task?.claim_expires_at || ''
+    },
+
+    taskClaimReminderVisible() {
+      return Boolean(this.submissionDraftExpiresAt)
+    },
+
+    taskClaimCountdownText() {
+      return this.formatCountdown(this.submissionDraftExpiresAt)
+    },
+
+    startedTaskDraftExists() {
+      return hasStartedTaskDraft(this.taskId)
+    },
+
+    isLoggedIn() {
+      try {
+        return Boolean(uni.getStorageSync('token'))
+      } catch (error) {
+        return false
+      }
+    },
+
     actionDisabled() {
-      return !this.taskId || this.loading || this.riskBlocked || (!this.submission && this.remainingQuota <= 0)
+      return !this.taskId || this.loading || !this.isLoggedIn || this.riskBlocked || this.publishBlocked || (!this.submission && (this.remainingQuota <= 0 || this.acceptNotStarted))
     },
 
     primaryActionText() {
+      if (!this.isLoggedIn) return '去登录'
       if (this.riskBlocked) return '当前禁止接单'
+      if (this.publishBlocked) return '仅查看详情'
       if (!this.taskId) return '任务不存在'
-      if (!this.submission) return this.remainingQuota <= 0 ? '已无名额' : '开始任务'
+      if (!this.submission) {
+        if (this.startedTaskDraftExists) return '继续任务'
+        if (this.acceptNotStarted) return '待接单'
+        return this.remainingQuota <= 0 ? '已无名额' : '开始任务'
+      }
       const status = Number(this.submission.review_status)
+      if (status === -1) return '继续任务'
       if (status === 2) return '重新提交'
       if (status === 0) return '查看提交'
       if (status === 1) return '查看结果'
@@ -186,9 +261,18 @@ export default {
   },
 
   onShow() {
+    this.startCountdownTimer()
     if (this.taskId && this.hasLoadedData) {
       this.loadPageData(true)
     }
+  },
+
+  onHide() {
+    this.stopCountdownTimer()
+  },
+
+  onUnload() {
+    this.stopCountdownTimer()
   },
 
   async onPullDownRefresh() {
@@ -283,8 +367,19 @@ export default {
     },
 
     handlePrimaryAction() {
+      if (!this.isLoggedIn) {
+        uni.showToast({ title: '请先登录后再接单', icon: 'none' })
+        uni.switchTab({ url: '/pages/my/index' })
+        return
+      }
+
       if (this.riskBlocked) {
         uni.showToast({ title: this.riskReason || '当前账号已被标记，禁止接单', icon: 'none' })
+        return
+      }
+
+      if (this.publishBlocked) {
+        uni.showToast({ title: '发单账号仅可查看任务详情', icon: 'none' })
         return
       }
 
@@ -293,12 +388,25 @@ export default {
         return
       }
 
+      if (!this.submission && this.acceptNotStarted) {
+        uni.showToast({ title: '当前任务暂未到可接单时间', icon: 'none' })
+        return
+      }
+
       if (!this.submission) {
+        if (this.startedTaskDraftExists) {
+          this.continueTask()
+          return
+        }
         this.startTask()
         return
       }
 
       const status = Number(this.submission.review_status)
+      if (status === -1) {
+        this.continueTask()
+        return
+      }
       if (status === 2) {
         this.resubmitTask()
         return
@@ -308,12 +416,49 @@ export default {
     },
 
     startTask() {
+      requestTaskSubscribeMessage()
+      claimTask(this.taskId)
+        .then((res) => {
+          const submissionId = res?.submission_id || res?.data?.submission_id
+          const expiresAt = res?.expires_at || res?.data?.expires_at || ''
+          saveStartedTaskDraft({
+            id: submissionId || this.taskId,
+            task_id: this.taskId,
+            title: this.task.title,
+            task_title: this.task.title,
+            platform: this.task.platform,
+            reward_amount: this.task.reward_amount,
+            total_quota: this.task.total_quota,
+            used_quota: this.task.used_quota,
+            remaining_quota: this.remainingQuota,
+            accept_start_time: this.task.accept_start_time,
+            start_time: this.task.start_time,
+            end_time: this.task.end_time,
+            created_at: this.task.created_at,
+            expires_at: expiresAt
+          })
+          uni.navigateTo({
+            url: submissionId
+              ? `/pages/upload/index?taskId=${this.taskId}&submissionId=${submissionId}`
+              : `/pages/upload/index?taskId=${this.taskId}`
+          })
+        })
+        .catch((error) => {
+          uni.showToast({ title: error?.message || '任务暂时无法接单', icon: 'none' })
+        })
+    },
+
+    continueTask() {
+      requestTaskSubscribeMessage()
       uni.navigateTo({
-        url: `/pages/upload/index?taskId=${this.taskId}`
+        url: this.submission && Number(this.submission.review_status) === -1
+          ? `/pages/upload/index?taskId=${this.taskId}&submissionId=${this.submission.id}`
+          : `/pages/upload/index?taskId=${this.taskId}`
       })
     },
 
     resubmitTask() {
+      requestTaskSubscribeMessage()
       uni.navigateTo({
         url: `/pages/upload/index?taskId=${this.taskId}&submissionId=${this.submission.id}`
       })
@@ -332,6 +477,35 @@ export default {
 
     formatTime(time) {
       return formatTime(time)
+    },
+
+    formatCountdown(targetTime) {
+      if (!targetTime) return '已过期'
+      const target = new Date(targetTime).getTime()
+      if (Number.isNaN(target)) return '已过期'
+      const diff = target - this.nowTs
+      if (diff <= 0) return '已过期'
+      const totalMinutes = Math.ceil(diff / 60000)
+      const hours = Math.floor(totalMinutes / 60)
+      const minutes = totalMinutes % 60
+      if (hours > 0) {
+        return `${hours}小时${minutes}分钟`
+      }
+      return `${minutes}分钟`
+    },
+
+    startCountdownTimer() {
+      if (this.countdownTimer) return
+      this.nowTs = Date.now()
+      this.countdownTimer = setInterval(() => {
+        this.nowTs = Date.now()
+      }, 30000)
+    },
+
+    stopCountdownTimer() {
+      if (!this.countdownTimer) return
+      clearInterval(this.countdownTimer)
+      this.countdownTimer = null
     },
 
     platformText(platform) {
@@ -411,6 +585,53 @@ export default {
   border-radius: 20rpx;
   padding: 20rpx;
   margin-bottom: 24rpx;
+}
+
+.notice-panel {
+  background: #eff6ff;
+  border: 1rpx solid rgba(59, 130, 246, 0.18);
+  border-radius: 20rpx;
+  padding: 20rpx;
+  margin-bottom: 24rpx;
+}
+
+.notice-title {
+  font-size: 30rpx;
+  font-weight: 600;
+  color: #1d4ed8;
+  display: block;
+  margin-bottom: 10rpx;
+}
+
+.notice-text {
+  font-size: 24rpx;
+  line-height: 1.6;
+  color: #334155;
+  display: block;
+}
+
+.deadline-panel {
+  background: linear-gradient(135deg, #fff1f2 0%, #ffe4e6 100%);
+  border: 1rpx solid rgba(244, 63, 94, 0.22);
+  border-radius: 20rpx;
+  padding: 22rpx 24rpx;
+  margin-bottom: 24rpx;
+  box-shadow: 0 12rpx 28rpx rgba(244, 63, 94, 0.12);
+}
+
+.deadline-title {
+  font-size: 30rpx;
+  font-weight: 700;
+  color: #be123c;
+  display: block;
+  margin-bottom: 8rpx;
+}
+
+.deadline-text {
+  font-size: 24rpx;
+  line-height: 1.6;
+  color: #9f1239;
+  display: block;
 }
 
 .risk-title {

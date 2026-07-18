@@ -55,6 +55,13 @@ export const getTaskDetail = (id) => {
   })
 }
 
+export const claimTask = (id) => {
+  return request({
+    url: `/tasks/${id}`,
+    method: 'POST'
+  })
+}
+
 export const submitTask = (data) => {
   return request({
     url: '/submissions',

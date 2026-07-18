@@ -31,9 +31,24 @@ export const invalidateUserCache = () => {
   cacheStore.clear()
 }
 
-export const wxLogin = (code) => {
+export const wxLogin = (code, profile = {}) => {
   return request({
     url: '/user/login',
+    method: 'POST',
+    data: {
+      code,
+      nickname: profile.nickname || '',
+      avatar: profile.avatar || ''
+    }
+  }).then((res) => {
+    invalidateUserCache()
+    return res
+  })
+}
+
+export const bindUserPhone = (code) => {
+  return request({
+    url: '/user/phone',
     method: 'POST',
     data: { code }
   }).then((res) => {
@@ -52,6 +67,17 @@ export const getUserInfo = () => {
     method: 'GET'
   }).then((res) => {
     setCached(key, res)
+    return res
+  })
+}
+
+export const updateUserInfo = (data) => {
+  return request({
+    url: '/user/info',
+    method: 'PUT',
+    data
+  }).then((res) => {
+    invalidateUserCache()
     return res
   })
 }

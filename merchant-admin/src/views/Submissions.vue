@@ -1,12 +1,27 @@
 <template>
-  <div class="submissions-page">
-    <el-card>
+  <div class="page">
+    <el-card class="card-panel">
       <template #header>
         <div class="card-header">
-          <span>提交审核</span>
+          <div>
+            <div class="title">提交审核</div>
+            <div class="subtitle">查看提交记录、审核结果和图片证据</div>
+          </div>
           <div class="toolbar">
-            <el-input v-model="filters.task_id" placeholder="任务ID" clearable style="width: 120px" @change="resetAndLoad" />
-            <el-select v-model="filters.platform" placeholder="全部平台" clearable style="width: 130px" @change="resetAndLoad">
+            <el-input
+              v-model="filters.task_id"
+              placeholder="任务ID"
+              clearable
+              style="width: 120px"
+              @change="resetAndLoad"
+            />
+            <el-select
+              v-model="filters.platform"
+              placeholder="全部平台"
+              clearable
+              style="width: 130px"
+              @change="resetAndLoad"
+            >
               <el-option label="抖音" value="douyin" />
               <el-option label="小红书" value="xiaohongshu" />
               <el-option label="淘宝" value="taobao" />
@@ -18,13 +33,19 @@
               <el-radio-button :label="1">通过</el-radio-button>
               <el-radio-button :label="2">驳回</el-radio-button>
             </el-radio-group>
-            <el-input v-model="filters.month_key" placeholder="月份 YYYY-MM" clearable style="width: 140px" @change="resetAndLoad" />
+            <el-input
+              v-model="filters.month_key"
+              placeholder="月份 YYYY-MM"
+              clearable
+              style="width: 140px"
+              @change="resetAndLoad"
+            />
             <el-button @click="exportCsv">导出 CSV</el-button>
           </div>
         </div>
       </template>
 
-      <el-table :data="submissionList" v-loading="loading">
+      <el-table :data="submissionList" v-loading="loading" stripe>
         <el-table-column prop="id" label="ID" width="80" />
         <el-table-column prop="task_id" label="任务ID" width="100" />
         <el-table-column prop="platform" label="平台" width="100">
@@ -50,8 +71,22 @@
         <el-table-column label="操作" width="220" fixed="right">
           <template #default="{ row }">
             <el-button type="primary" link @click="viewDetail(row)">查看</el-button>
-            <el-button v-if="Number(row.review_status) === 0" type="success" link @click="handleReview(row, 1)">通过</el-button>
-            <el-button v-if="Number(row.review_status) === 0" type="danger" link @click="showRejectDialog(row)">驳回</el-button>
+            <el-button
+              v-if="Number(row.review_status) === 0"
+              type="success"
+              link
+              @click="handleReview(row, 1)"
+            >
+              通过
+            </el-button>
+            <el-button
+              v-if="Number(row.review_status) === 0"
+              type="danger"
+              link
+              @click="showRejectDialog(row)"
+            >
+              驳回
+            </el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -74,7 +109,7 @@
         <el-descriptions :column="2" border>
           <el-descriptions-item label="平台">{{ platformText(currentSubmission.platform) }}</el-descriptions-item>
           <el-descriptions-item label="任务标题">{{ currentSubmission.task_title }}</el-descriptions-item>
-          <el-descriptions-item label="用户手机号">{{ currentSubmission.phone_number }}</el-descriptions-item>
+          <el-descriptions-item label="用户手机号">{{ currentSubmission.phone_number || '-' }}</el-descriptions-item>
           <el-descriptions-item label="实付金额">¥{{ currentSubmission.paid_amount }}</el-descriptions-item>
           <el-descriptions-item label="返现金额">¥{{ currentSubmission.reward_amount }}</el-descriptions-item>
           <el-descriptions-item label="提交时间">{{ currentSubmission.created_at }}</el-descriptions-item>
@@ -91,10 +126,19 @@
         <div class="screenshots">
           <h3>截图</h3>
           <el-row :gutter="16">
-            <el-col :span="6" v-for="(item, index) in screenshots" :key="index">
+            <el-col
+              v-for="(item, index) in screenshots"
+              :key="index"
+              :span="6"
+            >
               <div class="screenshot-item">
                 <div class="screenshot-label">{{ item.label }}</div>
-                <el-image :src="item.url" :preview-src-list="screenshotUrls" fit="cover" class="screenshot-image" />
+                <el-image
+                  :src="item.url"
+                  :preview-src-list="screenshotUrls"
+                  fit="cover"
+                  class="screenshot-image"
+                />
               </div>
             </el-col>
           </el-row>
@@ -145,7 +189,6 @@ const pagination = reactive({
 })
 
 const statusText = (status) => submissionStatusText(status)
-
 const statusTagType = (status) => submissionStatusTagType(status)
 
 const screenshots = computed(() => {
@@ -158,11 +201,11 @@ const screenshots = computed(() => {
     { label: '关注/评论', url: currentSubmission.value.screenshot_follow },
     { label: '分享', url: currentSubmission.value.screenshot_share },
     { label: '详情页', url: currentSubmission.value.screenshot_detail },
-    { label: '加购', url: currentSubmission.value.screenshot_cart }
-  ].filter(item => item.url)
+    { label: '实付款订单截图', url: currentSubmission.value.screenshot_cart }
+  ].filter((item) => item.url)
 })
 
-const screenshotUrls = computed(() => screenshots.value.map(item => item.url))
+const screenshotUrls = computed(() => screenshots.value.map((item) => item.url))
 
 const buildParams = () => {
   const params = {
@@ -180,10 +223,11 @@ const loadSubmissions = async () => {
   try {
     loading.value = true
     const res = await getSubmissions(buildParams())
-    submissionList.value = res.list || []
-    pagination.total = res.total || 0
+    submissionList.value = res?.list || []
+    pagination.total = res?.total || 0
   } catch (error) {
     console.error('加载提交列表失败', error)
+    ElMessage.error('提交列表加载失败')
   } finally {
     loading.value = false
   }
@@ -218,7 +262,7 @@ const handleReview = async (row, status) => {
     })
 
     ElMessage.success('审核完成')
-    loadSubmissions()
+    await loadSubmissions()
   } catch (error) {
     if (error !== 'cancel') {
       console.error('审核失败', error)
@@ -249,15 +293,27 @@ const handleReject = async () => {
     showRejectDialogVisible.value = false
     currentReviewRow.value = null
     rejectNote.value = ''
-    loadSubmissions()
+    await loadSubmissions()
   } catch (error) {
     console.error('驳回失败', error)
+    ElMessage.error('驳回失败')
   }
 }
 
 const exportCsv = () => {
-  const headers = ['ID', '任务ID', '平台', '任务标题', '用户', '手机号', '实付金额', '返现金额', '状态', '提交时间']
-  const rows = submissionList.value.map(item => [
+  const headers = [
+    'ID',
+    '任务ID',
+    '平台',
+    '任务标题',
+    '用户',
+    '手机号',
+    '实付金额',
+    '返现金额',
+    '状态',
+    '提交时间'
+  ]
+  const rows = submissionList.value.map((item) => [
     item.id,
     item.task_id,
     platformText(item.platform),
@@ -269,9 +325,11 @@ const exportCsv = () => {
     statusText(item.review_status),
     item.created_at
   ])
+
   const csv = [headers, ...rows]
-    .map(row => row.map(cell => `"${String(cell).replaceAll('"', '""')}"`).join(','))
+    .map((row) => row.map((cell) => `"${String(cell).replaceAll('"', '""')}"`).join(','))
     .join('\n')
+
   const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8;' })
   const url = URL.createObjectURL(blob)
   const link = document.createElement('a')
@@ -287,11 +345,34 @@ onMounted(() => {
 </script>
 
 <style scoped>
+.page {
+  display: flex;
+  flex-direction: column;
+}
+
+.card-panel {
+  border-radius: 16px;
+  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.06);
+}
+
 .card-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
   gap: 16px;
+  flex-wrap: wrap;
+}
+
+.title {
+  font-size: 18px;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.subtitle {
+  margin-top: 4px;
+  font-size: 13px;
+  color: #64748b;
 }
 
 .toolbar {
@@ -318,7 +399,7 @@ onMounted(() => {
 .screenshots h3 {
   margin-bottom: 16px;
   font-size: 16px;
-  color: #333;
+  color: #0f172a;
 }
 
 .screenshot-item {
@@ -327,7 +408,7 @@ onMounted(() => {
 
 .screenshot-label {
   font-size: 14px;
-  color: #666;
+  color: #64748b;
   margin-bottom: 8px;
 }
 
@@ -347,12 +428,12 @@ onMounted(() => {
 .review-note h3 {
   margin-bottom: 12px;
   font-size: 16px;
-  color: #333;
+  color: #0f172a;
 }
 
 .review-note p {
   font-size: 14px;
-  color: #666;
+  color: #64748b;
   line-height: 1.6;
 }
 

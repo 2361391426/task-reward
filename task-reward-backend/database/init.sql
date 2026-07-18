@@ -10,6 +10,7 @@ CREATE TABLE IF NOT EXISTS users (
   total_earnings DECIMAL(10,2) NOT NULL DEFAULT 0.00 COMMENT 'Total earnings',
   available_balance DECIMAL(10,2) NOT NULL DEFAULT 0.00 COMMENT 'Available balance',
   frozen_balance DECIMAL(10,2) NOT NULL DEFAULT 0.00 COMMENT 'Frozen balance',
+  publish_permission TINYINT NOT NULL DEFAULT 0 COMMENT '1 can view publish tasks',
   status TINYINT NOT NULL DEFAULT 1 COMMENT '1 active, 2 disabled',
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -79,6 +80,22 @@ CREATE TABLE IF NOT EXISTS merchants (
   INDEX idx_username (username)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Merchants';
 
+CREATE TABLE IF NOT EXISTS merchant_staffs (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  merchant_id BIGINT NOT NULL COMMENT 'Merchant ID',
+  username VARCHAR(50) NOT NULL COMMENT 'Login username',
+  password VARCHAR(255) NOT NULL COMMENT 'Bcrypt password hash',
+  nickname VARCHAR(100) DEFAULT NULL COMMENT 'Display name',
+  role VARCHAR(20) NOT NULL DEFAULT 'operator' COMMENT 'operator, reviewer, finance',
+  status TINYINT NOT NULL DEFAULT 1 COMMENT '1 active, 2 disabled',
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uk_merchant_username (merchant_id, username),
+  INDEX idx_merchant_id (merchant_id),
+  INDEX idx_role (role),
+  CONSTRAINT fk_staff_merchant FOREIGN KEY (merchant_id) REFERENCES merchants(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Merchant staff accounts';
+
 CREATE TABLE IF NOT EXISTS tasks (
   id BIGINT PRIMARY KEY AUTO_INCREMENT,
   merchant_id BIGINT NOT NULL COMMENT 'Merchant ID',
@@ -90,16 +107,23 @@ CREATE TABLE IF NOT EXISTS tasks (
   remaining_quota INT NOT NULL COMMENT 'Remaining quota',
   search_keyword VARCHAR(100) DEFAULT NULL COMMENT 'Search keyword',
   shop_name VARCHAR(200) DEFAULT NULL COMMENT 'Shop name',
+  product_name VARCHAR(200) DEFAULT NULL COMMENT 'Product name',
   product_link VARCHAR(500) DEFAULT NULL COMMENT 'Product link',
   requirements JSON DEFAULT NULL COMMENT 'Task requirements',
   status TINYINT NOT NULL DEFAULT 1 COMMENT '1 active, 2 paused, 3 closed',
   start_time TIMESTAMP NULL DEFAULT NULL COMMENT 'Start time',
+  accept_start_time TIMESTAMP NULL DEFAULT NULL COMMENT 'Accept start time',
   end_time TIMESTAMP NULL DEFAULT NULL COMMENT 'End time',
+  start_notified_at TIMESTAMP NULL DEFAULT NULL COMMENT 'Task start notified time',
+  end_notified_at TIMESTAMP NULL DEFAULT NULL COMMENT 'Task end notified time',
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   INDEX idx_merchant_id (merchant_id),
   INDEX idx_status (status),
   INDEX idx_start_time (start_time),
+  INDEX idx_accept_start_time (accept_start_time),
+  INDEX idx_status_end_time (status, end_time),
+  INDEX idx_merchant_status_created_at (merchant_id, status, created_at),
   CONSTRAINT fk_tasks_merchant FOREIGN KEY (merchant_id) REFERENCES merchants(id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Tasks';
 
@@ -109,7 +133,9 @@ CREATE TABLE IF NOT EXISTS submissions (
   user_id BIGINT NOT NULL COMMENT 'User ID',
   platform VARCHAR(32) NOT NULL COMMENT 'Platform',
   paid_amount DECIMAL(10,2) NOT NULL DEFAULT 0.00 COMMENT 'Actual paid amount',
+  wechat_id VARCHAR(100) DEFAULT NULL COMMENT 'WeChat ID',
   phone_number VARCHAR(255) DEFAULT NULL COMMENT 'Encrypted phone number',
+  order_number VARCHAR(100) DEFAULT NULL COMMENT 'Order number',
   screenshot_search VARCHAR(500) DEFAULT NULL,
   screenshot_shop_1 VARCHAR(500) DEFAULT NULL,
   screenshot_shop_2 VARCHAR(500) DEFAULT NULL,
@@ -118,6 +144,12 @@ CREATE TABLE IF NOT EXISTS submissions (
   screenshot_share VARCHAR(500) DEFAULT NULL,
   screenshot_detail VARCHAR(500) DEFAULT NULL,
   screenshot_cart VARCHAR(500) DEFAULT NULL,
+  screenshot_paid_order VARCHAR(500) DEFAULT NULL,
+  address_text TEXT DEFAULT NULL COMMENT 'Address text',
+  accepted_at TIMESTAMP NULL DEFAULT NULL COMMENT 'Accepted time',
+  expires_at TIMESTAMP NULL DEFAULT NULL COMMENT 'Draft expire time',
+  released_at TIMESTAMP NULL DEFAULT NULL COMMENT 'Release time',
+  release_reason VARCHAR(255) DEFAULT NULL COMMENT 'Release reason',
   status TINYINT NOT NULL DEFAULT 0 COMMENT '0 pending, 1 approved, 2 rejected',
   reject_reason VARCHAR(500) DEFAULT NULL,
   reward_amount DECIMAL(10,2) DEFAULT 0.00 COMMENT 'Reward amount',
@@ -129,6 +161,8 @@ CREATE TABLE IF NOT EXISTS submissions (
   INDEX idx_user_id (user_id),
   INDEX idx_status (status),
   INDEX idx_created_at (created_at),
+  INDEX idx_task_status_created_at (task_id, status, created_at),
+  INDEX idx_user_status_created_at (user_id, status, created_at),
   CONSTRAINT fk_submissions_task FOREIGN KEY (task_id) REFERENCES tasks(id),
   CONSTRAINT fk_submissions_user FOREIGN KEY (user_id) REFERENCES users(id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Submissions';
@@ -183,6 +217,30 @@ CREATE TABLE IF NOT EXISTS audit_logs (
   INDEX idx_created_at (created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Audit logs';
 
+CREATE TABLE IF NOT EXISTS feedbacks (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  user_id BIGINT NOT NULL COMMENT 'User ID',
+  user_nickname VARCHAR(100) DEFAULT NULL COMMENT 'User nickname',
+  user_avatar VARCHAR(255) DEFAULT NULL COMMENT 'User avatar',
+  category VARCHAR(50) NOT NULL DEFAULT 'general' COMMENT 'Feedback category',
+  content TEXT NOT NULL COMMENT 'Feedback content',
+  contact_info VARCHAR(200) DEFAULT NULL COMMENT 'Contact info',
+  attachments JSON DEFAULT NULL COMMENT 'Attachment list',
+  task_id BIGINT DEFAULT NULL COMMENT 'Related task ID',
+  status TINYINT NOT NULL DEFAULT 0 COMMENT '0 pending, 1 replied, 2 closed',
+  reply_content TEXT DEFAULT NULL COMMENT 'Merchant reply',
+  reply_user_type VARCHAR(20) DEFAULT NULL COMMENT 'Reply user type',
+  reply_user_id BIGINT DEFAULT NULL COMMENT 'Reply user ID',
+  reply_user_name VARCHAR(100) DEFAULT NULL COMMENT 'Reply user name',
+  replied_at TIMESTAMP NULL DEFAULT NULL COMMENT 'Replied time',
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  INDEX idx_user_id (user_id),
+  INDEX idx_status (status),
+  INDEX idx_created_at (created_at),
+  INDEX idx_task_id (task_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='User feedbacks';
+
 CREATE TABLE IF NOT EXISTS merchant_recharges (
   id BIGINT PRIMARY KEY AUTO_INCREMENT,
   merchant_id BIGINT NOT NULL COMMENT 'Merchant ID',
@@ -221,12 +279,3 @@ INSERT INTO system_config (config_key, config_value, description) VALUES
 ON DUPLICATE KEY UPDATE
   config_value = VALUES(config_value),
   description = VALUES(description);
-
-INSERT INTO merchants (username, password, company_name, contact_phone, balance, status)
-VALUES ('admin', '$2a$10$1zmgkT7R2lC3QLkmKK41x.I5JIY5rtlSNcNWSf1mzrtlC9AiCDlIa', 'Demo merchant', '13800138000', 10000.00, 1)
-ON DUPLICATE KEY UPDATE
-  password = VALUES(password),
-  company_name = VALUES(company_name),
-  contact_phone = VALUES(contact_phone),
-  balance = VALUES(balance),
-  status = VALUES(status);

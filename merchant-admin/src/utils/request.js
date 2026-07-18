@@ -3,8 +3,10 @@ import { ElMessage } from 'element-plus'
 import { useAuthStore } from '@/stores/auth'
 import router from '@/router'
 
+const IS_DEV = import.meta.env.DEV || import.meta.env.MODE === 'development'
+
 const request = axios.create({
-  baseURL: import.meta.env.VITE_API_BASE_URL || '/api',
+  baseURL: import.meta.env.VITE_API_BASE_URL || (IS_DEV ? 'http://127.0.0.1:3001/api' : '/api'),
   timeout: 10000
 })
 
@@ -40,17 +42,17 @@ request.interceptors.response.use(
       return res.data
     }
 
-    ElMessage.error(res.message || 'Request failed')
-    return Promise.reject(new Error(res.message || 'Request failed'))
+    ElMessage.error(res.message || '请求失败')
+    return Promise.reject(new Error(res.message || '请求失败'))
   },
   (error) => {
     if (error.response?.status === 401) {
       const authStore = useAuthStore()
       authStore.logout()
       router.push('/login')
-      ElMessage.error('Login expired, please sign in again')
+      ElMessage.error('登录已过期，请重新登录')
     } else {
-      ElMessage.error(error.message || 'Network error')
+      ElMessage.error(error.message || '网络错误')
     }
     return Promise.reject(error)
   }

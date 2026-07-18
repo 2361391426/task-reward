@@ -6,7 +6,7 @@ const bcrypt = require('bcryptjs')
 
 const success = (data) => ({ code: 0, data, message: 'success' })
 const error = (message) => ({ code: -1, data: null, message })
-const authError = (res, message = 'Not logged in') => res.status(401).json(error(message))
+const authError = (res, message = '未登录') => res.status(401).json(error(message))
 
 const loginAttempts = new Map()
 const MAX_LOGIN_ATTEMPTS = 5
@@ -54,13 +54,13 @@ const requireMerchant = (req, res) => {
   try {
     decoded = jwt.verify(token, process.env.JWT_SECRET || 'test-jwt-secret')
   } catch (err) {
-    authError(res, 'Token invalid or expired')
+    authError(res, '登录已过期或无效')
     return null
   }
 
   const merchant = queryOne('merchants', { id: decoded.merchantId })
   if (!merchant) {
-    authError(res, 'Merchant not found or disabled')
+    authError(res, '商家不存在或已禁用')
     return null
   }
 
@@ -80,6 +80,7 @@ const safeDecrypt = (value) => {
 const formatTask = (task) => ({
   ...task,
   platform: normalizePlatform(task.platform),
+  product_name: task.product_name || task.product_link || '',
   reward_amount: parseFloat(task.reward_amount || 0)
 })
 
@@ -230,28 +231,28 @@ router.post('/login', async (req, res) => {
   try {
     const { username, password } = req.body
     if (!username || !password) {
-      return res.json(error('Username and password are required'))
+      return res.json(error('请输入用户名和密码'))
     }
 
     const loginKey = getLoginKey(req, username)
     const loginState = getLoginState(loginKey)
     if (loginState.lockedUntil && loginState.lockedUntil > Date.now()) {
-      return res.json(error('Too many failed attempts, please try again later'))
+      return res.json(error('失败次数过多，请稍后再试'))
     }
 
     const merchant = queryOne('merchants', { username })
     if (!merchant) {
       recordLoginFailure(loginKey)
-      return res.json(error('Invalid username or password'))
+      return res.json(error('用户名或密码错误'))
     }
 
     const isValid = await bcrypt.compare(password, merchant.password)
     if (!isValid) {
       const { lockedUntil } = recordLoginFailure(loginKey)
       if (lockedUntil) {
-        return res.json(error('Too many failed attempts, please try again later'))
+        return res.json(error('失败次数过多，请稍后再试'))
       }
-      return res.json(error('Invalid username or password'))
+      return res.json(error('用户名或密码错误'))
     }
 
     clearLoginAttempts(loginKey)
@@ -311,6 +312,7 @@ router.post('/tasks', async (req, res) => {
       product_link,
       reward_amount,
       total_quota,
+      accept_start_time,
       end_time
     } = req.body
 
@@ -339,7 +341,9 @@ router.post('/tasks', async (req, res) => {
         product_link: product_link || '',
         reward_amount: parsedReward,
         total_quota: parsedQuota,
+        remaining_quota: parsedQuota,
         used_quota: 0,
+        accept_start_time: accept_start_time || null,
         end_time,
         status: 1
       })
@@ -482,7 +486,7 @@ router.patch('/tasks', async (req, res) => {
     const nextStatus = normalizeTaskStatus(req.body.status ?? req.body.task_status)
 
     if (!taskId || nextStatus === null) {
-      return res.json(error('Missing required parameters'))
+      return res.json(error('缺少必要参数'))
     }
 
     const task = queryOne('tasks', { id: taskId })
@@ -500,6 +504,14 @@ router.patch('/tasks', async (req, res) => {
 
     if (normalizeStatus(task.status, 1) !== nextStatus) {
       withTransaction(({ update: txUpdate, insert: txInsert }) => {
+        const refundAmount = nextStatus === 3
+          ? Math.max((parseFloat(task.reward_amount || 0) * Math.max((task.total_quota || 0) - (task.used_quota || 0), 0)), 0)
+          : 0
+        if (refundAmount > 0) {
+          txUpdate('merchants', { id: auth.merchant.id }, {
+            balance: parseFloat(auth.merchant.balance || 0) + refundAmount
+          })
+        }
         txUpdate('tasks', { id: taskId }, { status: nextStatus })
         txInsert('audit_logs', {
           operator_type: 'merchant',
@@ -507,8 +519,8 @@ router.patch('/tasks', async (req, res) => {
           action: 'task_status_change',
           target_type: 'task',
           target_id: taskId,
-          summary: `Task status changed to ${nextStatus}`,
-          detail: JSON.stringify({ status: nextStatus })
+          summary: `任务状态变更为 ${nextStatus}`,
+          detail: JSON.stringify({ status: nextStatus, refund_amount: refundAmount })
         })
       })
     }
@@ -624,10 +636,12 @@ router.post('/submissions/review', async (req, res) => {
         if (user) {
           const rewardAmount = parseFloat(currentTask.reward_amount || 0)
           const newBalance = parseFloat(user.balance || 0) + rewardAmount
+          const newAvailableBalance = parseFloat(user.available_balance || 0) + rewardAmount
           const newEarnings = parseFloat(user.total_earnings || 0) + rewardAmount
 
           txUpdate('users', { id: currentSubmission.user_id }, {
             balance: newBalance,
+            available_balance: newAvailableBalance,
             total_earnings: newEarnings
           })
 
@@ -636,8 +650,8 @@ router.post('/submissions/review', async (req, res) => {
             submission_id: currentSubmission.id,
             type: 1,
             amount: rewardAmount,
-            balance_after: newBalance,
-            description: `Task reward - ${currentSubmission.task_id}`
+            balance_after: newAvailableBalance,
+            description: `任务返现 - ${currentSubmission.task_id}`
           })
         }
       } else {
@@ -652,7 +666,7 @@ router.post('/submissions/review', async (req, res) => {
         action: 'submission_review',
         target_type: 'submission',
         target_id: submissionId,
-        summary: reviewStatus === 1 ? 'Approve submission' : 'Reject submission',
+        summary: reviewStatus === 1 ? '审核通过提交' : '审核驳回提交',
         detail: JSON.stringify({
           review_status: reviewStatus,
           task_id: currentSubmission.task_id,
@@ -668,10 +682,10 @@ router.post('/submissions/review', async (req, res) => {
       return res.json(error(reviewResult.error))
     }
 
-    res.json(success({ message: 'Review completed' }))
+    res.json(success({ message: '审核完成' }))
   } catch (err) {
     console.error('Review failed:', err)
-    res.json(error('Review failed'))
+    res.json(error('审核失败'))
   }
 })
 
@@ -741,15 +755,15 @@ router.patch('/withdrawals', async (req, res) => {
 
     const withdrawal = queryOne('withdrawals', { id: withdrawalId })
     if (!withdrawal) {
-      return res.json(error('Withdrawal not found'))
+      return res.json(error('提现记录不存在'))
     }
     if (normalizeStatus(withdrawal.status) !== 0) {
-      return res.json(error('Withdrawal already processed'))
+      return res.json(error('提现已处理'))
     }
 
     const user = queryOne('users', { id: withdrawal.user_id })
     if (!user) {
-      return res.json(error('User not found'))
+      return res.json(error('用户不存在'))
     }
 
     const amount = parseFloat(withdrawal.amount || 0)
@@ -757,7 +771,7 @@ router.patch('/withdrawals', async (req, res) => {
     const availableBalance = parseFloat(user.available_balance || 0)
 
     if (frozenBalance < amount) {
-      return res.json(error('Frozen balance is insufficient'))
+      return res.json(error('冻结余额不足'))
     }
 
     const result = withTransaction(({ update: txUpdate, insert: txInsert }) => {
@@ -771,7 +785,7 @@ router.patch('/withdrawals', async (req, res) => {
         })
       } else {
         if (!rejectReason) {
-          return { error: 'Reject reason is required' }
+          return { error: '请输入驳回原因' }
         }
 
         txUpdate('withdrawals', { id: withdrawalId }, {
@@ -791,7 +805,7 @@ router.patch('/withdrawals', async (req, res) => {
         action: 'withdrawal_review',
         target_type: 'withdrawal',
         target_id: withdrawalId,
-        summary: nextStatus === 1 ? 'Approve withdrawal' : 'Reject withdrawal',
+        summary: nextStatus === 1 ? '审核通过提现' : '审核驳回提现',
         detail: JSON.stringify({
           status: nextStatus,
           user_id: withdrawal.user_id,
@@ -813,7 +827,7 @@ router.patch('/withdrawals', async (req, res) => {
     }))
   } catch (err) {
     console.error('Withdraw review failed:', err)
-    res.json(error('Withdraw review failed'))
+    res.json(error('提现审核失败'))
   }
 })
 
@@ -964,6 +978,174 @@ router.patch('/risk-users', async (req, res) => {
   } catch (err) {
     console.error('Update risk user failed:', err)
     res.json(error('Update risk user failed'))
+  }
+})
+
+router.get('/todos', async (req, res) => {
+  try {
+    const auth = requireMerchant(req, res)
+    if (!auth) return
+
+    const merchantId = auth.merchant.id
+    const tasks = query('tasks', { merchant_id: merchantId })
+    const taskMap = new Map(tasks.map(task => [task.id, task]))
+    const submissions = query('submissions').filter(item => taskMap.has(item.task_id))
+    const withdrawals = query('withdrawals', { merchant_id: merchantId })
+
+    const now = new Date()
+    const reviewTimeoutHours = 24
+    const pendingPublish = tasks.filter(item => {
+      const status = normalizeTaskStatus(item.status)
+      return status === 2 && (!item.start_time || new Date(item.start_time) > now)
+    }).length
+    const activeOrReady = tasks.filter(item => normalizeTaskStatus(item.status) === 1 || normalizeTaskStatus(item.status) === 2).length
+    const overdueReviewRows = submissions
+      .filter(item => normalizeStatus(item.review_status ?? item.status ?? 0) === 0)
+      .filter(item => item.created_at && (now - new Date(item.created_at)) > reviewTimeoutHours * 60 * 60 * 1000)
+      .sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
+      .slice(0, 10)
+      .map(item => {
+        const task = taskMap.get(item.task_id)
+        return {
+          id: item.id,
+          task_id: item.task_id,
+          user_id: item.user_id,
+          created_at: item.created_at,
+          status: normalizeStatus(item.review_status ?? item.status ?? 0),
+          task_title: task?.title || '',
+          user_nickname: item.user_nickname || item.nickname || ''
+        }
+      })
+    const overdueReview = overdueReviewRows.length
+    const pendingWithdrawals = withdrawals.filter(item => normalizeWithdrawStatus(item.status) === 0).length
+
+    res.json(success({
+      review_timeout_hours: reviewTimeoutHours,
+      tasks: {
+        pending_publish: pendingPublish,
+        active_or_ready: activeOrReady,
+        ended: tasks.filter(item => normalizeTaskStatus(item.status) === 3).length
+      },
+      submissions: {
+        overdue_review: overdueReview
+      },
+      withdrawals: {
+        pending: pendingWithdrawals
+      },
+      overdue_reviews: overdueReviewRows
+    }))
+  } catch (err) {
+    console.error('Get merchant todos failed:', err)
+    res.json(error('Get merchant todos failed'))
+  }
+})
+
+router.get('/staffs', async (req, res) => {
+  try {
+    const auth = requireMerchant(req, res)
+    if (!auth) return
+
+    const merchantId = auth.merchant.id
+    const rows = query('merchant_staffs', { merchant_id: merchantId })
+      .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+      .map(row => ({
+        ...row,
+        role: row.role || 'operator',
+        status: normalizeStatus(row.status, 1)
+      }))
+
+    res.json(success({ list: rows }))
+  } catch (err) {
+    console.error('Get merchant staffs failed:', err)
+    res.json(error('Get merchant staffs failed'))
+  }
+})
+
+router.post('/staffs', async (req, res) => {
+  try {
+    const auth = requireMerchant(req, res)
+    if (!auth) return
+
+    const merchantId = auth.merchant.id
+    const username = String(req.body.username || '').trim()
+    const password = String(req.body.password || '').trim()
+    const nickname = String(req.body.nickname || '').trim() || null
+    const role = ['operator', 'reviewer', 'finance'].includes(req.body.role) ? req.body.role : 'operator'
+
+    if (!username || !password) {
+      return res.json(error('请输入用户名和密码'))
+    }
+
+    const exists = queryOne('merchant_staffs', { merchant_id: merchantId, username })
+    if (exists) {
+      return res.json(error('用户名已存在'))
+    }
+
+    const passwordHash = await bcrypt.hash(password, 10)
+    const staff = insert('merchant_staffs', {
+      merchant_id: merchantId,
+      username,
+      password: passwordHash,
+      nickname,
+      role,
+      status: 1
+    })
+
+    res.json(success({
+      staff_id: staff.id,
+      username,
+      nickname,
+      role
+    }))
+  } catch (err) {
+    console.error('Create merchant staff failed:', err)
+    res.json(error('Create merchant staff failed'))
+  }
+})
+
+router.patch('/staffs', async (req, res) => {
+  try {
+    const auth = requireMerchant(req, res)
+    if (!auth) return
+
+    const merchantId = auth.merchant.id
+    const staffId = parseInt(req.body.id ?? req.body.staff_id, 10)
+    if (!staffId) {
+      return res.json(error('缺少员工ID'))
+    }
+
+    const staff = queryOne('merchant_staffs', { id: staffId, merchant_id: merchantId })
+    if (!staff) {
+      return res.json(error('员工不存在'))
+    }
+
+    const updates = {}
+    if (Object.prototype.hasOwnProperty.call(req.body, 'nickname')) {
+      updates.nickname = String(req.body.nickname || '').trim() || null
+    }
+    if (Object.prototype.hasOwnProperty.call(req.body, 'role')) {
+      updates.role = ['operator', 'reviewer', 'finance'].includes(req.body.role) ? req.body.role : 'operator'
+    }
+    if (Object.prototype.hasOwnProperty.call(req.body, 'status')) {
+      const nextStatus = parseInt(req.body.status, 10)
+      if (![1, 2].includes(nextStatus)) {
+        return res.json(error('状态无效'))
+      }
+      updates.status = nextStatus
+    }
+    if (Object.prototype.hasOwnProperty.call(req.body, 'password') && String(req.body.password || '').trim()) {
+      updates.password = await bcrypt.hash(String(req.body.password).trim(), 10)
+    }
+
+    if (Object.keys(updates).length === 0) {
+      return res.json(error('未提供修改内容'))
+    }
+
+    update('merchant_staffs', { id: staffId, merchant_id: merchantId }, updates)
+    res.json(success({ staff_id: staffId }))
+  } catch (err) {
+    console.error('Update merchant staff failed:', err)
+    res.json(error('Update merchant staff failed'))
   }
 })
 

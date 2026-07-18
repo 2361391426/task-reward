@@ -72,6 +72,28 @@ export const getRiskUsers = (params) => request({
   params
 })
 
+export const getMerchantTodos = () => request({
+  url: '/merchant/todos',
+  method: 'GET'
+})
+
+export const getMerchantStaffs = () => request({
+  url: '/merchant/staffs',
+  method: 'GET'
+})
+
+export const createMerchantStaff = (data) => request({
+  url: '/merchant/staffs',
+  method: 'POST',
+  data
+})
+
+export const updateMerchantStaff = (data) => request({
+  url: '/merchant/staffs',
+  method: 'PATCH',
+  data
+})
+
 export const updateRiskUser = (data) => request({
   url: '/merchant/risk-users',
   method: 'PATCH',
@@ -87,5 +109,17 @@ export const getRecharges = (params) => request({
 export const createRecharge = (data) => request({
   url: '/merchant/recharges',
   method: 'POST',
+  data
+})
+
+export const getMerchantUsers = (params) => request({
+  url: '/merchant/users',
+  method: 'GET',
+  params
+})
+
+export const updateMerchantUserPermission = (data) => request({
+  url: '/merchant/users',
+  method: 'PATCH',
   data
 })

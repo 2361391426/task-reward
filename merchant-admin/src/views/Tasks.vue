@@ -43,6 +43,20 @@
             <el-tag :type="statusTagType(row.status)">{{ statusText(row.status) }}</el-tag>
           </template>
         </el-table-column>
+        <el-table-column prop="publication_status" label="发布状态" width="120">
+          <template #default="{ row }">
+            <el-tag :type="publicationStatusTagType(row.publication_status)">
+              {{ publicationStatusText(row.publication_status) }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column prop="accept_status" label="接单状态" width="120">
+          <template #default="{ row }">
+            <el-tag :type="row.accept_status_tag_type || 'info'">
+              {{ row.accept_status_text || '未知' }}
+            </el-tag>
+          </template>
+        </el-table-column>
         <el-table-column prop="created_at" label="创建时间" width="180" />
         <el-table-column label="操作" width="280" fixed="right">
           <template #default="{ row }">
@@ -102,7 +116,50 @@
         </el-form-item>
 
         <el-form-item label="任务描述" prop="description">
-          <el-input v-model="taskForm.description" type="textarea" :rows="3" placeholder="请输入任务描述" />
+          <div class="description-editor">
+            <div class="description-toolbar">
+              <el-button size="small" @click="addDescriptionTextBlock">添加文字</el-button>
+              <el-button size="small" @click="addDescriptionImageBlock">添加图片</el-button>
+              <span class="field-hint">支持图文混排，保存后小程序详情页会按顺序展示</span>
+            </div>
+
+            <div class="description-block-list">
+              <div v-for="(block, index) in descriptionBlocks" :key="`${block.type}-${index}`" class="description-block">
+                <template v-if="block.type === 'text'">
+                  <el-input
+                    v-model="block.text"
+                    type="textarea"
+                    :rows="3"
+                    placeholder="请输入描述文字"
+                    @input="scheduleSaveDraft"
+                  />
+                </template>
+                <template v-else>
+                  <div class="description-image-box">
+                    <img v-if="block.url" :src="block.url" class="description-image" alt="描述图片" />
+                    <div v-else class="description-image-empty">未上传图片</div>
+                    <div class="description-image-actions">
+                      <el-button size="small" @click="chooseDescriptionImage(index)">上传图片</el-button>
+                      <el-button size="small" @click="removeDescriptionBlock(index)">删除</el-button>
+                    </div>
+                  </div>
+                </template>
+                <div class="description-block-actions">
+                  <el-button text :disabled="index === 0" @click="moveDescriptionBlock(index, -1)">上移</el-button>
+                  <el-button text :disabled="index === descriptionBlocks.length - 1" @click="moveDescriptionBlock(index, 1)">下移</el-button>
+                  <el-button text type="danger" @click="removeDescriptionBlock(index)">删除</el-button>
+                </div>
+              </div>
+            </div>
+
+            <input
+              ref="descriptionImageInput"
+              type="file"
+              accept="image/*"
+              class="hidden-file-input"
+              @change="handleDescriptionImageChange"
+            />
+          </div>
         </el-form-item>
 
         <el-form-item label="搜索关键词" prop="search_keyword">
@@ -154,6 +211,18 @@
           />
         </el-form-item>
 
+        <el-form-item label="可接单时间" prop="accept_start_time">
+          <el-date-picker
+            v-model="taskForm.accept_start_time"
+            type="datetime"
+            placeholder="默认创建后立即可接单"
+            format="YYYY-MM-DD HH:mm:ss"
+            value-format="YYYY-MM-DD HH:mm:ss"
+            style="width: 100%"
+          />
+          <span class="field-hint">任务可以先展示，但在这个时间之前不会允许用户接单</span>
+        </el-form-item>
+
         <el-form-item label="结束时间" prop="end_time">
           <el-date-picker
             v-model="taskForm.end_time"
@@ -202,7 +271,8 @@ import QRCode from 'qrcode'
 import { useDebounceFn } from '@vueuse/core'
 import { useAuthStore } from '@/stores/auth'
 import { createTask, getTasks, updateTask, updateTaskStatus } from '@/api/merchant'
-import { platformText, taskStatusTagType, taskStatusText } from '@/utils/format'
+import { uploadMerchantImage } from '@/utils/upload'
+import { platformText, publicationStatusTagType, publicationStatusText, taskStatusTagType, taskStatusText } from '@/utils/format'
 
 const authStore = useAuthStore()
 const loading = ref(false)
@@ -218,6 +288,9 @@ const shareQrCode = ref('')
 const shareQrLoading = ref(false)
 const scheduleEnabled = ref(false)
 const scheduleSaveDraft = useDebounceFn(() => saveDraft(), 250)
+const descriptionImageInput = ref(null)
+const pendingDescriptionImageIndex = ref(-1)
+const descriptionBlocks = ref([{ type: 'text', text: '' }])
 
 const filters = reactive({
   platform: '',
@@ -240,10 +313,86 @@ const createFormState = () => ({
   reward_amount: 0,
   total_quota: 1,
   start_time: '',
+  accept_start_time: '',
   end_time: ''
 })
 
 const taskForm = reactive(createFormState())
+
+const createTextBlock = (text = '') => ({ type: 'text', text })
+const createImageBlock = (url = '') => ({ type: 'image', url })
+const sortTasksNewestFirst = (list = []) => {
+  return [...list].sort((a, b) => {
+    const aTime = new Date(a.created_at || a.createdAt || a.start_time || a.end_time || 0).getTime()
+    const bTime = new Date(b.created_at || b.createdAt || b.start_time || b.end_time || 0).getTime()
+    if (Number.isFinite(aTime) && Number.isFinite(bTime) && aTime !== bTime) {
+      return bTime - aTime
+    }
+    return Number(b.id || 0) - Number(a.id || 0)
+  })
+}
+
+const normalizeDescriptionBlocks = (value) => {
+  if (!value) {
+    return [createTextBlock('')]
+  }
+
+  if (Array.isArray(value)) {
+    const blocks = value.map((item) => {
+      if (!item) return null
+      if (typeof item === 'string') {
+        return createTextBlock(item)
+      }
+      if (typeof item === 'object') {
+        if (item.type === 'image' || item.url) {
+          return createImageBlock(item.url || item.src || '')
+        }
+        return createTextBlock(item.text || item.content || '')
+      }
+      return createTextBlock(String(item))
+    }).filter(Boolean)
+    return blocks.length ? blocks : [createTextBlock('')]
+  }
+
+  if (typeof value === 'string') {
+    const text = value.trim()
+    if (!text) {
+      return [createTextBlock('')]
+    }
+
+    try {
+      const parsed = JSON.parse(text)
+      if (Array.isArray(parsed)) {
+        return normalizeDescriptionBlocks(parsed)
+      }
+    } catch (error) {
+      // fall back to plain text
+    }
+
+    return [createTextBlock(text)]
+  }
+
+  return [createTextBlock(String(value))]
+}
+
+const serializeDescriptionBlocks = () => {
+  const blocks = descriptionBlocks.value
+    .map((block) => {
+      if (!block) return null
+      if (block.type === 'image') {
+        return block.url ? { type: 'image', url: block.url } : null
+      }
+      const text = String(block.text || '').trim()
+      return text ? { type: 'text', text } : null
+    })
+    .filter(Boolean)
+
+  if (!blocks.length) {
+    return ''
+  }
+
+  return JSON.stringify(blocks)
+}
 
 const draftKey = computed(() => {
   const merchantId = authStore.userInfo?.id || 'guest'
@@ -279,7 +428,7 @@ const loadTasks = async () => {
   try {
     loading.value = true
     const res = await getTasks(buildParams())
-    taskList.value = res.list || []
+    taskList.value = sortTasksNewestFirst(res.list || [])
     pagination.total = res.total || 0
   } catch (error) {
     console.error('加载任务列表失败', error)
@@ -299,7 +448,8 @@ const saveDraft = () => {
     draftKey.value,
     JSON.stringify({
       form: { ...taskForm },
-      scheduleEnabled: scheduleEnabled.value
+      scheduleEnabled: scheduleEnabled.value,
+      descriptionBlocks: descriptionBlocks.value
     })
   )
 }
@@ -313,6 +463,7 @@ const loadDraft = () => {
     if (parsed?.form) {
       Object.assign(taskForm, createFormState(), parsed.form)
       scheduleEnabled.value = Boolean(parsed.scheduleEnabled ?? parsed.form.start_time)
+      descriptionBlocks.value = normalizeDescriptionBlocks(parsed.descriptionBlocks || parsed.form.description)
       return true
     }
   } catch (error) {
@@ -324,6 +475,65 @@ const loadDraft = () => {
 
 const clearDraft = () => {
   localStorage.removeItem(draftKey.value)
+}
+
+const addDescriptionTextBlock = () => {
+  descriptionBlocks.value.push(createTextBlock(''))
+  scheduleSaveDraft()
+}
+
+const addDescriptionImageBlock = () => {
+  descriptionBlocks.value.push(createImageBlock(''))
+  scheduleSaveDraft()
+}
+
+const removeDescriptionBlock = (index) => {
+  descriptionBlocks.value.splice(index, 1)
+  if (!descriptionBlocks.value.length) {
+    descriptionBlocks.value.push(createTextBlock(''))
+  }
+  scheduleSaveDraft()
+}
+
+const moveDescriptionBlock = (index, direction) => {
+  const nextIndex = index + direction
+  if (nextIndex < 0 || nextIndex >= descriptionBlocks.value.length) return
+  const list = [...descriptionBlocks.value]
+  const [item] = list.splice(index, 1)
+  list.splice(nextIndex, 0, item)
+  descriptionBlocks.value = list
+  scheduleSaveDraft()
+}
+
+const chooseDescriptionImage = (index) => {
+  pendingDescriptionImageIndex.value = index
+  descriptionImageInput.value?.click()
+}
+
+const handleDescriptionImageChange = async (event) => {
+  const file = event.target.files?.[0]
+  const index = pendingDescriptionImageIndex.value
+  pendingDescriptionImageIndex.value = -1
+
+  if (!file || index < 0) {
+    event.target.value = ''
+    return
+  }
+
+  try {
+    const url = await uploadMerchantImage(file)
+    descriptionBlocks.value[index] = {
+      type: 'image',
+      url
+    }
+    scheduleSaveDraft()
+    ElMessage.success('图片上传成功')
+  } catch (error) {
+    console.error('上传描述图片失败', error)
+    ElMessage.error('图片上传失败')
+  } finally {
+    event.target.value = ''
+  }
 }
 
 const buildShareText = (task) => {
@@ -369,15 +579,18 @@ const fillForm = (task) => {
     reward_amount: task.reward_amount || 0,
     total_quota: task.total_quota || 1,
     start_time: task.start_time || '',
+    accept_start_time: task.accept_start_time || '',
     end_time: task.end_time || ''
   })
+  descriptionBlocks.value = normalizeDescriptionBlocks(task.description || '')
 }
 
 const openCreateDialog = () => {
-  dialogMode.value = 'create'
+  dialogMode.value = 'copy'
   editingTaskId.value = null
   Object.assign(taskForm, createFormState())
   scheduleEnabled.value = false
+  descriptionBlocks.value = [createTextBlock('')]
   showDialog.value = true
   loadDraft()
 }
@@ -387,7 +600,9 @@ const openEditDialog = (task) => {
   editingTaskId.value = task.id
   Object.assign(taskForm, createFormState())
   fillForm(task)
-  scheduleEnabled.value = !!task.start_time
+  scheduleEnabled.value = true
+  taskForm.start_time = task.start_time || ''
+  taskForm.accept_start_time = task.accept_start_time || ''
   showDialog.value = true
   loadDraft()
 }
@@ -400,7 +615,9 @@ const openCopyDialog = (task) => {
     ...task,
     title: `${task.title} - 复制`
   })
-  scheduleEnabled.value = !!task.start_time
+  scheduleEnabled.value = true
+  taskForm.start_time = task.start_time || ''
+  taskForm.accept_start_time = task.accept_start_time || ''
   showDialog.value = true
 }
 
@@ -420,17 +637,19 @@ const handleSubmit = async () => {
         id: editingTaskId.value,
         platform: taskForm.platform,
         title: taskForm.title,
-        description: taskForm.description,
+        description: serializeDescriptionBlocks(),
         search_keyword: taskForm.search_keyword,
         shop_name: taskForm.shop_name,
         product_link: taskForm.product_link,
         start_time: scheduleEnabled.value ? taskForm.start_time : '',
+        accept_start_time: taskForm.accept_start_time,
         end_time: taskForm.end_time
       })
       ElMessage.success('任务已更新')
     } else {
       await createTask({
         ...taskForm,
+        description: serializeDescriptionBlocks(),
         start_time: scheduleEnabled.value ? taskForm.start_time : ''
       })
       ElMessage.success(scheduleEnabled.value ? '任务已设置定时发布' : '创建成功')
@@ -438,7 +657,7 @@ const handleSubmit = async () => {
 
     clearDraft()
     showDialog.value = false
-    loadTasks()
+    resetAndLoad()
   } catch (error) {
     if (error !== false) {
       console.error('保存任务失败', error)
@@ -547,6 +766,72 @@ onBeforeUnmount(() => {
 .share-box {
   display: grid;
   gap: 16px;
+}
+
+.description-editor {
+  width: 100%;
+  display: grid;
+  gap: 12px;
+}
+
+.description-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.description-block-list {
+  display: grid;
+  gap: 12px;
+}
+
+.description-block {
+  padding: 14px;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  background: #fafafa;
+}
+
+.description-block-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.description-image-box {
+  display: grid;
+  gap: 10px;
+}
+
+.description-image {
+  width: 100%;
+  max-height: 220px;
+  object-fit: contain;
+  border-radius: 10px;
+  border: 1px solid #e5e7eb;
+  background: #fff;
+}
+
+.description-image-empty {
+  min-height: 140px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+  border: 1px dashed #cbd5e1;
+  color: #94a3b8;
+  background: #fff;
+}
+
+.description-image-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.hidden-file-input {
+  display: none;
 }
 
 .share-meta {

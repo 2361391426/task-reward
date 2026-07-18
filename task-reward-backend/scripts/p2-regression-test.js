@@ -84,7 +84,8 @@ async function run() {
     screenshot_follow: 'https://example.com/5.jpg',
     screenshot_share: 'https://example.com/6.jpg',
     screenshot_detail: 'https://example.com/7.jpg',
-    screenshot_cart: 'https://example.com/8.jpg'
+    screenshot_cart: 'https://example.com/8.jpg',
+    screenshot_paid_order: 'https://example.com/9.jpg'
   }
 
   const submitRes = await client.post('/submissions', submitPayload, {

@@ -54,6 +54,16 @@ const routes = [
         path: 'risk-users',
         name: 'RiskUsers',
         component: () => import('@/views/RiskUsers.vue')
+      },
+      {
+        path: 'users',
+        name: 'Users',
+        component: () => import('@/views/Users.vue')
+      },
+      {
+        path: 'staffs',
+        name: 'Staffs',
+        component: () => import('@/views/Staffs.vue')
       }
     ]
   }

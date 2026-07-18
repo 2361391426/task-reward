@@ -1,16 +1,35 @@
 /* Global styles */
+view,
+text,
+image,
+button,
+input,
+textarea,
+scroll-view,
+swiper,
+swiper-item {
+  box-sizing: border-box;
+}
+
+image {
+  display: block;
+  max-width: 100%;
+}
+
 page {
   background:
-    radial-gradient(circle at top left, rgba(102, 126, 234, 0.14), transparent 32%),
-    radial-gradient(circle at top right, rgba(118, 75, 162, 0.10), transparent 28%),
-    linear-gradient(180deg, #f7f8fc 0%, #eef2ff 100%);
+    radial-gradient(circle at top left, rgba(37, 99, 235, 0.12), transparent 32%),
+    radial-gradient(circle at top right, rgba(6, 182, 212, 0.10), transparent 28%),
+    linear-gradient(180deg, #f7fbff 0%, #eff6ff 100%);
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
   color: #1f2937;
+  overflow-x: hidden;
 }
 
 .container {
   padding: 24rpx;
   min-height: 100vh;
+  padding-bottom: calc(24rpx + env(safe-area-inset-bottom));
   box-sizing: border-box;
 }
 
@@ -25,14 +44,14 @@ page {
 }
 
 .btn-primary {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(135deg, #2563eb 0%, #06b6d4 100%);
   color: #fff;
   border: none;
   border-radius: 18rpx;
   padding: 24rpx 28rpx;
   font-size: 30rpx;
   font-weight: 600;
-  box-shadow: 0 14rpx 28rpx rgba(102, 126, 234, 0.22);
+  box-shadow: 0 14rpx 28rpx rgba(37, 99, 235, 0.22);
 }
 
 .btn-primary:active {
@@ -83,4 +102,8 @@ page {
   padding: 120rpx 32rpx;
   color: #64748b;
   font-size: 26rpx;
+}
+
+.safe-bottom {
+  padding-bottom: env(safe-area-inset-bottom);
 }

@@ -6,7 +6,7 @@ const { buildIdentityCandidates, buildIdentityConflictReason, buildCooldownReaso
 
 const success = (data) => ({ code: 0, data, message: 'success' })
 const error = (message) => ({ code: -1, data: null, message })
-const authError = (res, message = 'Not logged in') => res.status(401).json(error(message))
+const authError = (res, message = '未登录') => res.status(401).json(error(message))
 
 const submissionLocks = new Set()
 const normalizeStatus = (value) => {
@@ -20,17 +20,41 @@ const getMonthKey = (value) => {
   return `${date.getFullYear()}-${month}`
 }
 
+let lastSyncExpiredTasksAt = 0
+const SYNC_THROTTLE_MS = 60 * 1000
+
 const syncExpiredTasks = () => {
-  const now = new Date()
+  const now = Date.now()
+  if (now - lastSyncExpiredTasksAt < SYNC_THROTTLE_MS) {
+    return
+  }
+  lastSyncExpiredTasksAt = now
+
   query('tasks')
     .filter(task => {
       const status = parseInt(task.status, 10)
       if (status !== 1 && status !== 2) return false
       if (!task.end_time) return false
-      return new Date(task.end_time) < now
+      return new Date(task.end_time).getTime() <= now
     })
     .forEach(task => {
       update('tasks', { id: task.id }, { status: 3 })
+    })
+
+  query('submissions')
+    .filter(submission =>
+      parseInt(submission.review_status, 10) === -1 &&
+      submission.expires_at &&
+      new Date(submission.expires_at).getTime() <= now
+    )
+    .forEach(submission => {
+      update('submissions', { id: submission.id }, {
+        review_status: -4,
+        status: -4,
+        review_note: '该任务已超时释放',
+        release_reason: '该任务已超时释放',
+        released_at: new Date().toISOString()
+      })
     })
 }
 
@@ -43,12 +67,20 @@ const mapSubmission = (submission) => {
     paid_amount: parseFloat(submission.paid_amount || 0),
     reward_amount: task ? parseFloat(task.reward_amount || 0) : parseFloat(submission.reward_amount || 0),
     task_title: task ? task.title : '',
+    wechat_id: submission.wechat_id || '',
+    phone_number: submission.phone_number || '',
+    order_number: submission.order_number || '',
+    address_text: submission.address_text || '',
     submit_time: submission.submit_time || submission.created_at,
     review_time: submission.review_time || submission.reviewed_at || '',
     review_note: submission.review_note || submission.reject_reason || '',
     review_status: reviewStatus,
     status: reviewStatus,
-    month_key: submission.month_key || getMonthKey(submission.submit_time || submission.created_at)
+    month_key: submission.month_key || getMonthKey(submission.submit_time || submission.created_at),
+    accepted_at: submission.accepted_at || null,
+    expires_at: submission.expires_at || null,
+    released_at: submission.released_at || null,
+    release_reason: submission.release_reason || ''
   }
 }
 
@@ -203,12 +235,14 @@ router.post('/', async (req, res) => {
     try {
       decoded = jwt.verify(token, process.env.JWT_SECRET || 'test-jwt-secret')
     } catch (err) {
-      return authError(res, 'Token invalid or expired')
+      return authError(res, '登录已过期或无效')
     }
     const {
       task_id,
+      wechat_id,
       phone_number,
       paid_amount,
+      order_number,
       address_text,
       address,
       device_id,
@@ -220,10 +254,12 @@ router.post('/', async (req, res) => {
       screenshot_follow,
       screenshot_share,
       screenshot_detail,
-      screenshot_cart
+      screenshot_cart,
+      screenshot_paid_order
     } = req.body
 
     const task = queryOne('tasks', { id: parseInt(task_id, 10) })
+    const socialRequired = task ? ['douyin', 'xiaohongshu'].includes(task.platform) : false
     if (!task) {
       return res.json(error('Task not found'))
     }
@@ -231,7 +267,8 @@ router.post('/', async (req, res) => {
     if (parseInt(task.status, 10) !== 1) {
       return res.json(error('Task has ended'))
     }
-    if (task.start_time && new Date(task.start_time) > new Date()) {
+    const acceptStartTime = task.accept_start_time || task.start_time
+    if (acceptStartTime && new Date(acceptStartTime) > new Date()) {
       return res.json(error('Task has not started yet'))
     }
     if (task.end_time && new Date(task.end_time) < new Date()) {
@@ -245,15 +282,17 @@ router.post('/', async (req, res) => {
     }
 
     const requiredFields = [
+      wechat_id,
       phone_number,
+      order_number,
       screenshot_search,
       screenshot_shop_1,
       screenshot_shop_2,
       screenshot_shop_3,
-      screenshot_follow,
-      screenshot_share,
+      ...(socialRequired ? [screenshot_follow, screenshot_share] : []),
       screenshot_detail,
-      screenshot_cart
+      screenshot_cart,
+      screenshot_paid_order
     ]
     if (requiredFields.some(field => !field)) {
       return res.json(error('Missing required fields'))
@@ -261,7 +300,7 @@ router.post('/', async (req, res) => {
 
     const user = queryOne('users', { id: decoded.userId })
     if (!user) {
-      return res.json(error('User not found'))
+      return res.json(error('用户不存在'))
     }
 
     const identities = buildIdentityCandidates({
@@ -342,16 +381,21 @@ router.post('/', async (req, res) => {
         user_id: decoded.userId,
         platform: taskInsideTx.platform || 'taobao',
         paid_amount: actualPaidAmount,
+        wechat_id,
+        address_text: address_text || address || '',
         month_key: getMonthKey(new Date()),
         phone_number,
+        order_number,
         screenshot_search,
         screenshot_shop_1,
         screenshot_shop_2,
         screenshot_shop_3,
-        screenshot_follow,
-        screenshot_share,
+        screenshot_follow: socialRequired ? screenshot_follow : null,
+        screenshot_share: socialRequired ? screenshot_share : null,
         screenshot_detail,
         screenshot_cart,
+        screenshot_paid_order,
+        address_text: address_text || address || '',
         status: 0,
         review_status: 0,
         review_note: '',
@@ -401,7 +445,7 @@ router.get('/my', async (req, res) => {
     try {
       decoded = jwt.verify(token, process.env.JWT_SECRET || 'test-jwt-secret')
     } catch (err) {
-      return authError(res, 'Token invalid or expired')
+      return authError(res, '登录已过期或无效')
     }
     const taskIds = String(req.query.task_ids || '')
       .split(',')
@@ -414,6 +458,7 @@ router.get('/my', async (req, res) => {
       submissions = submissions.filter(item => taskIdSet.has(parseInt(item.task_id, 10)))
     }
     submissions = submissions
+      .filter(item => parseInt(item.status, 10) !== -4)
       .map(mapSubmission)
       .sort((a, b) => new Date(b.submit_time) - new Date(a.submit_time))
 
@@ -436,7 +481,7 @@ router.get('/:id', async (req, res) => {
     try {
       decoded = jwt.verify(token, process.env.JWT_SECRET || 'test-jwt-secret')
     } catch (err) {
-      return authError(res, 'Token invalid or expired')
+      return authError(res, '登录已过期或无效')
     }
     const { id } = req.params
 
@@ -445,7 +490,12 @@ router.get('/:id', async (req, res) => {
       return res.json(error('Submission not found'))
     }
 
-    if (submission.user_id !== decoded.userId) {
+    if (decoded.type === 'merchant' || decoded.type === 'merchant_staff') {
+      const task = queryOne('tasks', { id: submission.task_id })
+      if (!task || parseInt(task.merchant_id, 10) !== parseInt(decoded.merchantId || decoded.user_id, 10)) {
+        return res.json(error('No permission'))
+      }
+    } else if (submission.user_id !== decoded.userId) {
       return res.json(error('No permission'))
     }
 
@@ -468,7 +518,7 @@ router.put('/:id', async (req, res) => {
     try {
       decoded = jwt.verify(token, process.env.JWT_SECRET || 'test-jwt-secret')
     } catch (err) {
-      return authError(res, 'Token invalid or expired')
+      return authError(res, '登录已过期或无效')
     }
     const { id } = req.params
     const submissionId = parseInt(id, 10)
@@ -493,51 +543,28 @@ router.put('/:id', async (req, res) => {
       return res.json(error('Current account is blocked'))
     }
 
-    if (normalizeStatus(submission.review_status ?? submission.status ?? 0) !== 2) {
+    const currentStatus = normalizeStatus(submission.review_status ?? submission.status ?? 0)
+    if (currentStatus !== 2 && currentStatus !== -1) {
       return res.json(error('Current status does not allow resubmission'))
     }
 
+    if (currentStatus === -1 && submission.expires_at && new Date(submission.expires_at) <= new Date()) {
+      return res.json(error('Task has expired'))
+    }
+
     const task = queryOne('tasks', { id: submission.task_id })
+    const socialRequired = task ? ['douyin', 'xiaohongshu'].includes(task.platform || 'taobao') : false
     if (!task || parseInt(task.status, 10) !== 1 || (task.end_time && new Date(task.end_time) < new Date())) {
       return res.json(error('Task has ended'))
     }
 
     const {
+      wechat_id,
       phone_number,
       paid_amount,
-      screenshot_search,
-      screenshot_shop_1,
-      screenshot_shop_2,
-      screenshot_shop_3,
-      screenshot_follow,
-      screenshot_share,
-      screenshot_detail,
-      screenshot_cart
-    } = req.body
-
-    const actualPaidAmount = parseFloat(paid_amount || submission.paid_amount || 0)
-    if (Number.isNaN(actualPaidAmount) || actualPaidAmount <= 0) {
-      return res.json(error('Invalid paid amount'))
-    }
-
-    const requiredFields = [
-      phone_number,
-      screenshot_search,
-      screenshot_shop_1,
-      screenshot_shop_2,
-      screenshot_shop_3,
-      screenshot_follow,
-      screenshot_share,
-      screenshot_detail,
-      screenshot_cart
-    ]
-    if (requiredFields.some(field => !field)) {
-      return res.json(error('Missing required fields'))
-    }
-
-    update('submissions', { id: submissionId }, {
-      phone_number,
-      paid_amount: actualPaidAmount,
+      order_number,
+      address_text,
+      address,
       screenshot_search,
       screenshot_shop_1,
       screenshot_shop_2,
@@ -546,11 +573,60 @@ router.put('/:id', async (req, res) => {
       screenshot_share,
       screenshot_detail,
       screenshot_cart,
+      screenshot_paid_order
+    } = req.body
+
+    const actualPaidAmount = parseFloat(paid_amount || submission.paid_amount || 0)
+    if (Number.isNaN(actualPaidAmount) || actualPaidAmount <= 0) {
+      return res.json(error('Invalid paid amount'))
+    }
+
+    const requiredFields = [
+      wechat_id,
+      phone_number,
+      order_number,
+      screenshot_search,
+      screenshot_shop_1,
+      screenshot_shop_2,
+      screenshot_shop_3,
+      ...(socialRequired ? [screenshot_follow, screenshot_share] : []),
+      screenshot_detail,
+      screenshot_cart,
+      screenshot_paid_order
+    ]
+    if (requiredFields.some(field => !field)) {
+      return res.json(error('Missing required fields'))
+    }
+
+    update('submissions', { id: submissionId }, {
+      wechat_id,
+      phone_number,
+      order_number,
+      address_text: address_text || address || '',
+      paid_amount: actualPaidAmount,
+      screenshot_search,
+      screenshot_shop_1,
+      screenshot_shop_2,
+      screenshot_shop_3,
+      screenshot_follow: socialRequired ? screenshot_follow : null,
+      screenshot_share: socialRequired ? screenshot_share : null,
+      screenshot_detail,
+      screenshot_cart,
+      screenshot_paid_order,
       status: 0,
       review_status: 0,
       review_note: '',
-      review_time: ''
+      review_time: '',
+      accepted_at: submission.accepted_at || new Date().toISOString(),
+      released_at: null,
+      release_reason: ''
     })
+
+    if (currentStatus === -1) {
+      update('tasks', { id: submission.task_id }, {
+        remaining_quota: Math.max((queryOne('tasks', { id: submission.task_id })?.remaining_quota || 0) - 1, 0)
+      })
+    }
 
     res.json(success({ submission_id: submissionId }))
   } catch (err) {

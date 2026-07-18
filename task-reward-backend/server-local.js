@@ -2,7 +2,8 @@ const express = require('express')
 const cors = require('cors')
 const path = require('path')
 const fs = require('fs')
-require('dotenv').config({ path: '.env.local' })
+require('dotenv').config({ path: path.join(__dirname, '.env.local') })
+require('dotenv').config({ path: path.join(__dirname, '..', '.env.development.local') })
 
 const app = express()
 const PORT = 3001
@@ -32,6 +33,8 @@ initDB()
 const userRoutes = require('./api-local/user')
 const taskRoutes = require('./api-local/tasks')
 const submissionRoutes = require('./api-local/submissions')
+const feedbackRoutes = require('./api-local/feedbacks')
+const merchantFeedbackRoutes = require('./api-local/merchant-feedbacks')
 const merchantRoutes = require('./api-local/merchant')
 const uploadRoute = require('./api-local/upload')
 const healthRoute = require('./api-local/health')
@@ -39,9 +42,25 @@ const healthRoute = require('./api-local/health')
 app.use('/api/user', userRoutes)
 app.use('/api/tasks', taskRoutes)
 app.use('/api/submissions', submissionRoutes)
+app.use('/api/feedbacks', feedbackRoutes)
+app.use('/api/merchant/feedbacks', merchantFeedbackRoutes)
 app.use('/api/merchant', merchantRoutes)
 app.use('/api/upload', uploadRoute)
 app.use('/api/health', healthRoute)
+
+const lifecycleSweepIntervalMs = Number(process.env.TASK_LIFECYCLE_SWEEP_INTERVAL_MS || 60 * 1000)
+if (typeof taskRoutes.syncExpiredTasks === 'function') {
+  const sweepTaskLifecycle = () => {
+    try {
+      taskRoutes.syncExpiredTasks()
+    } catch (error) {
+      console.error('[lifecycle] failed to sweep tasks:', error)
+    }
+  }
+
+  sweepTaskLifecycle()
+  setInterval(sweepTaskLifecycle, Math.max(lifecycleSweepIntervalMs, 30 * 1000))
+}
 
 app.use((err, req, res, next) => {
   console.error(err)
@@ -52,8 +71,8 @@ app.use((err, req, res, next) => {
   })
 })
 
-app.listen(PORT, () => {
-  console.log(`Local test server running at http://localhost:${PORT}`)
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`Local test server running at http://0.0.0.0:${PORT}`)
   console.log(`API health check: http://localhost:${PORT}/api/health`)
   console.log(`Uploads directory: ${uploadsDir}`)
 })

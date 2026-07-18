@@ -1,13 +1,14 @@
 <template>
-  <view class="container">
+  <view class="page">
     <view class="summary card">
       <view class="summary-item">
-        <text class="label">可提现余额</text>
-        <text class="value">¥{{ availableBalance }}</text>
+        <text class="summary-label">可提现余额</text>
+        <text class="summary-value">¥{{ availableBalance }}</text>
       </view>
+      <view class="summary-divider"></view>
       <view class="summary-item">
-        <text class="label">冻结中</text>
-        <text class="value">¥{{ earnings.frozen_balance || 0 }}</text>
+        <text class="summary-label">冻结中</text>
+        <text class="summary-value muted">¥{{ earnings.frozen_balance || 0 }}</text>
       </view>
     </view>
 
@@ -38,7 +39,7 @@
         />
       </view>
 
-      <button class="btn-primary" :loading="submitting" :disabled="submitting || !canSubmit" @click="submit">
+      <button class="btn-primary submit-btn" :loading="submitting" :disabled="submitting || !canSubmit" @click="submit">
         提交提现
       </button>
     </view>
@@ -51,16 +52,16 @@
       <view class="record-list" v-if="withdrawalList.length">
         <view class="record-item card" v-for="item in withdrawalList" :key="item.id">
           <view class="record-top">
-            <text class="record-title">¥{{ item.amount }}</text>
+            <text class="record-amount">¥{{ item.amount }}</text>
             <view class="status-badge" :class="'status-' + item.status">
               {{ statusText(item.status) }}
             </view>
           </view>
-          <text class="record-text">实际到账: ¥{{ item.actual_amount || 0 }}</text>
-          <text class="record-text">手续费: ¥{{ item.fee || 0 }}</text>
-          <text class="record-text">账户: {{ item.account_info || '-' }}</text>
-          <text class="record-text">时间: {{ formatTime(item.created_at) }}</text>
-          <text class="record-text error" v-if="item.reject_reason">原因: {{ item.reject_reason }}</text>
+          <text class="record-text">实际到账：¥{{ item.actual_amount || 0 }}</text>
+          <text class="record-text">手续费：¥{{ item.fee || 0 }}</text>
+          <text class="record-text">账户：{{ item.account_info || '-' }}</text>
+          <text class="record-text">时间：{{ formatTime(item.created_at) }}</text>
+          <text class="record-text error" v-if="item.reject_reason">原因：{{ item.reject_reason }}</text>
         </view>
       </view>
 
@@ -123,7 +124,7 @@ export default {
           userId = parsed?.id ? String(parsed.id) : userId
         }
       } catch (error) {
-        console.error('解析用户草稿范围失败', error)
+        console.error('解析提现草稿范围失败', error)
       }
       return `task-reward:withdraw-draft:${userId}`
     },
@@ -339,37 +340,45 @@ export default {
 </script>
 
 <style scoped>
-.container {
-  padding: 20rpx;
-}
-
-.card {
-  background: #fff;
-  border-radius: 16rpx;
+.page {
+  min-height: 100vh;
   padding: 24rpx;
-  margin-bottom: 20rpx;
+  padding-bottom: calc(24rpx + env(safe-area-inset-bottom));
+  box-sizing: border-box;
 }
 
 .summary {
   display: flex;
+  align-items: stretch;
   justify-content: space-between;
+  gap: 20rpx;
 }
 
 .summary-item {
+  flex: 1;
   display: flex;
   flex-direction: column;
   gap: 8rpx;
 }
 
-.label {
+.summary-divider {
+  width: 1rpx;
+  background: #e2e8f0;
+}
+
+.summary-label {
   font-size: 24rpx;
   color: #64748b;
 }
 
-.value {
+.summary-value {
   font-size: 36rpx;
-  font-weight: 600;
+  font-weight: 700;
   color: #111827;
+}
+
+.summary-value.muted {
+  color: #334155;
 }
 
 .form-card {
@@ -392,22 +401,27 @@ export default {
 .form-input {
   background: #f8fafc;
   border: 1rpx solid #e2e8f0;
-  border-radius: 12rpx;
+  border-radius: 14rpx;
   height: 88rpx;
-  padding: 0 20rpx;
+  padding: 0 22rpx;
   font-size: 28rpx;
+  color: #111827;
 }
 
 .picker-value {
   background: #f8fafc;
   border: 1rpx solid #e2e8f0;
-  border-radius: 12rpx;
+  border-radius: 14rpx;
   height: 88rpx;
   display: flex;
   align-items: center;
-  padding: 0 20rpx;
+  padding: 0 22rpx;
   font-size: 28rpx;
   color: #111827;
+}
+
+.submit-btn {
+  margin-top: 6rpx;
 }
 
 .section {
@@ -433,7 +447,7 @@ export default {
 .record-item {
   display: flex;
   flex-direction: column;
-  gap: 8rpx;
+  gap: 10rpx;
 }
 
 .record-top {
@@ -442,7 +456,7 @@ export default {
   align-items: center;
 }
 
-.record-title {
+.record-amount {
   font-size: 32rpx;
   font-weight: 600;
   color: #111827;
@@ -458,7 +472,7 @@ export default {
 }
 
 .status-badge {
-  padding: 8rpx 16rpx;
+  padding: 8rpx 14rpx;
   border-radius: 999rpx;
   font-size: 22rpx;
 }
@@ -469,25 +483,29 @@ export default {
 }
 
 .status-1 {
-  background: #dcfce7;
+  background: #ecfdf5;
   color: #166534;
 }
 
 .status-2 {
-  background: #fee2e2;
-  color: #991b1b;
+  background: #fef2f2;
+  color: #b91c1c;
 }
 
 .load-more,
 .empty-state {
-  text-align: center;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  padding: 24rpx 0;
   color: #64748b;
-  padding: 28rpx 0;
+  font-size: 26rpx;
 }
 
 .empty-illustration {
-  width: 220rpx;
+  width: 180rpx;
   height: 180rpx;
-  margin-bottom: 10rpx;
+  margin-bottom: 12rpx;
 }
 </style>
