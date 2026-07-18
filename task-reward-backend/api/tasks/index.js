@@ -1,7 +1,7 @@
 const db = require('../../lib/db')
 const { success, error } = require('../../lib/response')
 const { normalizePagination, parsePositiveInt } = require('../../lib/pagination')
-const { normalizeTaskRecord, syncExpiredTasks } = require('../../lib/task-lifecycle')
+const { normalizeTaskRecord } = require('../../lib/task-lifecycle')
 
 const normalizePlatform = (value) => {
   const platforms = ['douyin', 'xiaohongshu', 'taobao', 'jd']
@@ -22,10 +22,6 @@ module.exports = async (req, res) => {
   }
 
   try {
-    await db.transaction(async (connection) => {
-      await syncExpiredTasks(connection)
-    })
-
     const { page, page_size, platform } = req.query
     const rawStatus = req.query.status
     const { page: currentPage, pageSize, offset } = normalizePagination(

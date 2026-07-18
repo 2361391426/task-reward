@@ -1,9 +1,15 @@
 const IS_DEV = !!import.meta.env.DEV || import.meta.env.MODE === 'development' || import.meta.env.VITE_LOCAL_DEBUG_LOGIN === 'true'
 const IS_WEIXIN_MP = typeof wx !== 'undefined' && typeof wx.request === 'function'
+
 const DEFAULT_DEV_BASE_URLS = [
   'http://192.168.3.22:3001/api',
   'http://localhost:3001/api',
   'http://127.0.0.1:3001/api'
+]
+
+const DEFAULT_PROD_BASE_URLS = [
+  'https://task-reward-vert.vercel.app/api',
+  'https://task-reward-git-main-shaofanglong1.vercel.app/api'
 ]
 
 const normalizeBaseUrl = (value) => String(value || '').replace(/\/+$/, '')
@@ -18,7 +24,10 @@ const buildBaseUrlList = () => {
 
   if (IS_DEV) {
     urls.push(...DEFAULT_DEV_BASE_URLS.map(normalizeBaseUrl))
+  } else {
+    urls.push(...DEFAULT_PROD_BASE_URLS.map(normalizeBaseUrl))
   }
+
   if (!IS_WEIXIN_MP) {
     urls.push('/api')
   }
@@ -100,7 +109,7 @@ const request = (options) => {
   }
 
   const pendingRequest = new Promise((resolve, reject) => {
-    const timeout = options.timeout || 15000
+    const timeout = options.timeout || 10000
 
     const tryRequest = (index, lastError = null) => {
       if (index >= BASE_URLS.length) {
@@ -153,6 +162,11 @@ const request = (options) => {
             return
           }
 
+          if (res.statusCode >= 500 && index + 1 < BASE_URLS.length) {
+            tryRequest(index + 1, res)
+            return
+          }
+
           uni.showToast({
             title: '网络错误',
             icon: 'none'
@@ -172,7 +186,6 @@ const request = (options) => {
     inFlightRequests.set(requestKey, pendingRequest)
   }
 
-  // 使用双分支 then 清理请求，避免 finally 返回一个未处理的拒绝 Promise。
   pendingRequest.then(
     () => {
       if (dedupeEnabled) {
