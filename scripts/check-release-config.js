@@ -2,6 +2,20 @@ const fs = require('fs')
 const path = require('path')
 
 const rootDir = path.join(__dirname, '..')
+
+const loadEnvFile = (filePath) => {
+  if (!fs.existsSync(filePath)) return
+
+  fs.readFileSync(filePath, 'utf8').split(/\r?\n/).forEach((line) => {
+    const match = line.match(/^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)\s*$/)
+    if (!match || process.env[match[1]]) return
+
+    process.env[match[1]] = match[2].replace(/^['"]|['"]$/g, '')
+  })
+}
+
+loadEnvFile(path.join(rootDir, '.env.production'))
+
 const manifestPath = path.join(rootDir, 'manifest.json')
 const projectConfigPath = path.join(rootDir, 'project.config.json')
 
