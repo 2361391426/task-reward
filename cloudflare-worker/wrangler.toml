@@ -1,0 +1,7 @@
+name = "task-reward-api-proxy"
+main = "src/index.js"
+compatibility_date = "2026-07-18"
+workers_dev = true
+
+[vars]
+ORIGIN_BASE_URL = "https://task-reward-vert.vercel.app"
