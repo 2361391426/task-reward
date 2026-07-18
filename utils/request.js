@@ -16,7 +16,9 @@ const buildBaseUrlList = () => {
     urls.push(envBaseUrl)
   }
 
-  urls.push(...DEFAULT_DEV_BASE_URLS.map(normalizeBaseUrl))
+  if (IS_DEV) {
+    urls.push(...DEFAULT_DEV_BASE_URLS.map(normalizeBaseUrl))
+  }
   if (!IS_WEIXIN_MP) {
     urls.push('/api')
   }

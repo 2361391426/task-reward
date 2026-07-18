@@ -4,10 +4,10 @@
   "description": "任务返现小程序",
   "scripts": {
     "dev:mp-weixin": "cross-env UNI_INPUT_DIR=. uni -p mp-weixin",
-    "build:mp-weixin": "cross-env NODE_ENV=development VITE_LOCAL_DEBUG_LOGIN=true VITE_API_BASE_URL=http://192.168.3.22:3001/api VITE_UPLOAD_URL=http://192.168.3.22:3001/api/upload UNI_INPUT_DIR=. uni build -p mp-weixin --mode development && node scripts/sync-mp-weixin-output.js",
+    "build:mp-weixin": "cross-env NODE_ENV=development VITE_LOCAL_DEBUG_LOGIN=true VITE_API_BASE_URL=http://192.168.3.22:3001/api VITE_UPLOAD_URL=http://192.168.3.22:3001/api/upload UNI_INPUT_DIR=. uni build -p mp-weixin --mode development --outDir dist/dev/mp-weixin",
     "build:mp-weixin:local": "npm run build:mp-weixin",
     "check:release": "node scripts/check-release-config.js",
-    "build:mp-weixin:release": "npm run check:release && cross-env NODE_ENV=production UNI_INPUT_DIR=. uni build -p mp-weixin && node scripts/sync-mp-weixin-output.js",
+    "build:mp-weixin:release": "npm run check:release && cross-env NODE_ENV=production UNI_INPUT_DIR=. uni build -p mp-weixin --outDir dist/build/mp-weixin",
     "backend:migrate": "node task-reward-backend/scripts/migrate.js",
     "backend:seed-demo": "node task-reward-backend/scripts/seed-demo.js",
     "backend:cleanup-uploads": "node task-reward-backend/scripts/cleanup-uploads.js"

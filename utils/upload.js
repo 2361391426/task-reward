@@ -1,3 +1,4 @@
+const IS_DEV = !!import.meta.env.DEV || import.meta.env.MODE === 'development' || import.meta.env.VITE_LOCAL_DEBUG_LOGIN === 'true'
 const IS_WEIXIN_MP = typeof wx !== 'undefined' && typeof wx.uploadFile === 'function'
 const DEFAULT_DEV_BASE_URLS = [
   'http://192.168.3.22:3001/api',
@@ -15,7 +16,9 @@ const buildBaseUrlList = () => {
     urls.push(envBaseUrl)
   }
 
-  urls.push(...DEFAULT_DEV_BASE_URLS.map(normalizeBaseUrl))
+  if (IS_DEV) {
+    urls.push(...DEFAULT_DEV_BASE_URLS.map(normalizeBaseUrl))
+  }
   if (!IS_WEIXIN_MP) {
     urls.push('/api')
   }
