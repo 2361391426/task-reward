@@ -23,7 +23,9 @@ module.exports = async (req, res) => {
       uptime_seconds: Math.floor(process.uptime()),
       timestamp: new Date().toISOString(),
       config: {
+        db_mode: process.env.DATABASE_URL ? 'neon' : 'mysql',
         jwt_secret_set: Boolean(process.env.JWT_SECRET),
+        database_url_set: Boolean(process.env.DATABASE_URL),
         db_host_set: Boolean(process.env.DB_HOST),
         db_name_set: Boolean(process.env.DB_NAME)
       }
