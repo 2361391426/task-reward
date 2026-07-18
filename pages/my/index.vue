@@ -373,19 +373,24 @@ export default {
           }
         }
 
-        const [userInfoRes, earningsRes] = IS_DEV
-          ? [
-              (() => {
-                try {
-                  const cached = uni.getStorageSync('userInfo')
-                  return cached ? (typeof cached === 'string' ? JSON.parse(cached) : cached) : {}
-                } catch (error) {
-                  return {}
-                }
-              })(),
-              { total_earnings: 0, available_balance: 0, frozen_balance: 0 }
-            ]
-          : await Promise.all([getUserInfo(), getEarnings()])
+        let userInfoRes = {}
+        let earningsRes = { total_earnings: 0, available_balance: 0, frozen_balance: 0 }
+
+        if (IS_DEV) {
+          try {
+            const cached = uni.getStorageSync('userInfo')
+            userInfoRes = cached ? (typeof cached === 'string' ? JSON.parse(cached) : cached) : {}
+          } catch (error) {
+            userInfoRes = {}
+          }
+        } else {
+          userInfoRes = await getUserInfo()
+          try {
+            earningsRes = await getEarnings()
+          } catch (error) {
+            console.error('加载收益信息失败', error)
+          }
+        }
 
         this.userInfo = {
           ...(userInfoRes || {}),
