@@ -37,7 +37,7 @@ module.exports = async (req, res) => {
       const result = await db.transaction(async (connection) => {
         await syncExpiredTasks(connection)
 
-        const taskId = parsePositiveInt(req.query.id, 0)
+        const taskId = parsePositiveInt(req.query.id ?? req.params?.id, 0)
         if (!taskId) {
           return { error: 'task_not_found' }
         }
@@ -165,14 +165,19 @@ module.exports = async (req, res) => {
       await syncExpiredTasks(connection)
     })
 
-    const { id } = req.query
+    const id = req.query.id ?? req.params?.id
+    const taskId = parsePositiveInt(id, 0)
+    if (!taskId) {
+      return res.status(404).json(error(404, '任务不存在'))
+    }
+
     const task = await db.queryOne(
       `SELECT id, platform, title, description, reward_amount, total_quota, remaining_quota,
               status, search_keyword, shop_name, product_name, product_link, requirements,
               start_time, accept_start_time, end_time, created_at
        FROM tasks
        WHERE id = ?`,
-      [id]
+      [taskId]
     )
 
     if (!task) {
@@ -181,14 +186,14 @@ module.exports = async (req, res) => {
 
     const activeClaim = await db.queryOne(
       `SELECT user_id, expires_at
-       FROM submissions
-       WHERE task_id = ?
+      FROM submissions
+      WHERE task_id = ?
          AND review_status = -1
          AND expires_at IS NOT NULL
          AND expires_at > NOW()
-       ORDER BY expires_at DESC
-       LIMIT 1`,
-      [id]
+      ORDER BY expires_at DESC
+      LIMIT 1`,
+      [taskId]
     )
 
     res.json(success({

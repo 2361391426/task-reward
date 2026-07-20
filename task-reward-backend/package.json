@@ -13,7 +13,10 @@
     "cleanup:uploads:weekly": "node scripts/cleanup-uploads.js --weekly",
     "smoke": "node scripts/smoke-test.js",
     "test:p2": "node scripts/p2-regression-test.js",
-    "test": "npm run smoke"
+    "test": "npm run smoke",
+    "start:scf": "node scf-server.js",
+    "build:scf": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-scf-package.ps1",
+    "deploy:scf": "node scripts/deploy-scf.js"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.470.0",
@@ -27,7 +30,8 @@
     "jsonwebtoken": "^9.0.2",
     "multer": "^1.4.5-lts.1",
     "mysql2": "^3.6.5",
-    "uuid": "^9.0.1"
+    "uuid": "^9.0.1",
+    "ws": "^8.21.1"
   },
   "devDependencies": {
     "vercel": "^33.0.1"

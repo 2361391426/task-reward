@@ -1,0 +1,94 @@
+name: 自动部署腾讯云函数
+
+on:
+  push:
+    branches:
+      - main
+      - master
+    paths:
+      - "task-reward-backend/**"
+      - ".github/workflows/deploy-scf.yml"
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    name: 构建并发布后端
+    runs-on: windows-latest
+
+    defaults:
+      run:
+        working-directory: task-reward-backend
+
+    steps:
+      - name: 拉取代码
+        uses: actions/checkout@v4
+
+      - name: 安装 Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: task-reward-backend/package-lock.json
+
+      - name: 安装依赖
+        run: npm ci
+
+      - name: 生成生产环境配置
+        shell: powershell
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          JWT_SECRET: ${{ secrets.JWT_SECRET }}
+          WECHAT_APPID: ${{ secrets.WECHAT_APPID }}
+          WECHAT_SECRET: ${{ secrets.WECHAT_SECRET }}
+          WECHAT_APPSECRET: ${{ secrets.WECHAT_SECRET }}
+          R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+          R2_PUBLIC_URL: ${{ secrets.R2_PUBLIC_URL }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          ADMIN_USERNAME: ${{ secrets.ADMIN_USERNAME }}
+          ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD }}
+          ADMIN_DISPLAY_NAME: ${{ secrets.ADMIN_DISPLAY_NAME }}
+          ADMIN_PHONE: ${{ secrets.ADMIN_PHONE }}
+        run: |
+          $items = [ordered]@{
+            DATABASE_URL = $env:DATABASE_URL
+            JWT_SECRET = $env:JWT_SECRET
+            WECHAT_APPID = $env:WECHAT_APPID
+            WECHAT_SECRET = $env:WECHAT_SECRET
+            WECHAT_APPSECRET = $env:WECHAT_APPSECRET
+            R2_ENDPOINT = $env:R2_ENDPOINT
+            R2_BUCKET = $env:R2_BUCKET
+            R2_PUBLIC_URL = $env:R2_PUBLIC_URL
+            R2_ACCESS_KEY_ID = $env:R2_ACCESS_KEY_ID
+            R2_SECRET_ACCESS_KEY = $env:R2_SECRET_ACCESS_KEY
+            ADMIN_USERNAME = $env:ADMIN_USERNAME
+            ADMIN_PASSWORD = $env:ADMIN_PASSWORD
+            ADMIN_DISPLAY_NAME = $env:ADMIN_DISPLAY_NAME
+            ADMIN_PHONE = $env:ADMIN_PHONE
+          }
+          $lines = @()
+          foreach ($key in $items.Keys) {
+            if (![string]::IsNullOrWhiteSpace($items[$key])) {
+              $lines += "$key=$($items[$key])"
+            }
+          }
+          if ($lines.Count -gt 0) {
+            [System.IO.File]::WriteAllText(".env.scf", ($lines -join "`n") + "`n", [System.Text.Encoding]::UTF8)
+            Write-Host "已生成 .env.scf，敏感值不会输出到日志。"
+          } else {
+            Write-Host "未配置业务环境变量，将使用腾讯云函数控制台中的环境变量。"
+          }
+
+      - name: 构建腾讯云函数压缩包
+        run: npm run build:scf
+
+      - name: 发布到腾讯云函数
+        env:
+          TENCENT_SECRET_ID: ${{ secrets.TENCENT_SECRET_ID }}
+          TENCENT_SECRET_KEY: ${{ secrets.TENCENT_SECRET_KEY }}
+          TENCENT_REGION: ${{ secrets.TENCENT_REGION }}
+          SCF_FUNCTION_NAME: ${{ secrets.SCF_FUNCTION_NAME }}
+          SCF_NAMESPACE: ${{ secrets.SCF_NAMESPACE }}
+          SCF_HANDLER: ${{ secrets.SCF_HANDLER }}
+        run: npm run deploy:scf
