@@ -118,7 +118,7 @@ module.exports = async (req, res) => {
             screenshot_shop_2, screenshot_shop_3, screenshot_follow, screenshot_share,
             screenshot_detail, screenshot_cart, screenshot_paid_order, address_text, accepted_at, expires_at,
             review_status, status, review_note, submit_time, reward_amount, created_at, updated_at)
-           VALUES (?, ?, ?, 0, '', '', '', '', '', '', '', '', '', '', '', NULL, NOW(), ?, -1, -1, '任务已开始', NOW(), 0, NOW(), NOW())`,
+           VALUES (?, ?, ?, 0, '', '', '', '', '', '', '', '', '', '', '', '', NULL, NOW(), ?, -1, -1, '任务已开始', NOW(), 0, NOW(), NOW())`,
           [taskId, auth.user.id, task.platform, expiresAt]
         )
 
