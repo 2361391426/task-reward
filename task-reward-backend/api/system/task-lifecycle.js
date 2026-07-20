@@ -1,6 +1,6 @@
 const db = require('../../lib/db')
 const { success, error } = require('../../lib/response')
-const { syncExpiredTasks } = require('../../lib/task-lifecycle')
+const { sweepTaskLifecycle } = require('../../lib/task-lifecycle')
 
 module.exports = async (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*')
@@ -26,10 +26,13 @@ module.exports = async (req, res) => {
 
   try {
     const result = await db.transaction(async (connection) => {
-      return syncExpiredTasks(connection)
+      return sweepTaskLifecycle(connection)
     })
 
-    return res.json(success({ expired_count: Number(result || 0) }, '任务状态已同步'))
+    return res.json(success({
+      expired_count: Number(result?.expiredCount || 0),
+      released_count: Number(result?.releasedCount || 0)
+    }, '任务状态已同步'))
   } catch (err) {
     console.error('Task lifecycle sweep failed:', err)
     return res.status(500).json(error(500, '服务器错误'))

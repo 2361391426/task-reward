@@ -1,8 +1,9 @@
 const db = require('../../lib/db')
+const cache = require('../../lib/cache')
 const { authenticateUser } = require('../../lib/auth')
 const { success, error, ErrorCodes } = require('../../lib/response')
 const { parsePositiveInt } = require('../../lib/pagination')
-const { normalizeTaskRecord, syncExpiredTasks, getDraftExpireAt } = require('../../lib/task-lifecycle')
+const { normalizeTaskRecord, getDraftExpireAt } = require('../../lib/task-lifecycle')
 
 const normalizePlatform = (value) => {
   const platforms = ['douyin', 'xiaohongshu', 'taobao', 'jd']
@@ -35,8 +36,6 @@ module.exports = async (req, res) => {
 
     try {
       const result = await db.transaction(async (connection) => {
-        await syncExpiredTasks(connection)
-
         const taskId = parsePositiveInt(req.query.id ?? req.params?.id, 0)
         if (!taskId) {
           return { error: 'task_not_found' }
@@ -68,6 +67,21 @@ module.exports = async (req, res) => {
         if (task.end_time && new Date(task.end_time) < now) {
           return { error: 'task_ended' }
         }
+
+        await connection.query(
+          `UPDATE submissions
+           SET review_status = -4,
+               release_reason = '项目超时自动释放',
+               released_at = NOW(),
+               review_note = '项目超时自动释放',
+               updated_at = NOW()
+           WHERE task_id = ?
+             AND user_id = ?
+             AND review_status = -1
+             AND expires_at IS NOT NULL
+             AND expires_at <= NOW()`,
+          [taskId, auth.user.id]
+        )
 
         const [activeRows] = await connection.query(
           `SELECT id, user_id, expires_at
@@ -105,6 +119,9 @@ module.exports = async (req, res) => {
           }
           if (recordStatus === -4 && existingRecord.released_at && isSameDay(existingRecord.released_at, now)) {
             return { error: 'task_cooldown' }
+          }
+          if (recordStatus === -4) {
+            return { error: 'already_submitted' }
           }
           if (recordStatus === 0 || recordStatus === 1 || recordStatus === 2) {
             return { error: 'already_submitted' }
@@ -149,6 +166,10 @@ module.exports = async (req, res) => {
         }
       }
 
+      if (result && !result.error) {
+        cache.clearByPrefix('tasks:list:')
+      }
+
       return res.json(success(result, '任务已开始'))
     } catch (err) {
       console.error('Start task draft failed:', err)
@@ -161,10 +182,6 @@ module.exports = async (req, res) => {
   }
 
   try {
-    await db.transaction(async (connection) => {
-      await syncExpiredTasks(connection)
-    })
-
     const id = req.query.id ?? req.params?.id
     const taskId = parsePositiveInt(id, 0)
     if (!taskId) {

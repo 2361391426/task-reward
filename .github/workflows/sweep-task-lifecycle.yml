@@ -1,0 +1,27 @@
+name: 定时同步任务状态
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+jobs:
+  sweep:
+    name: 清理过期任务和超时草稿
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 调用任务生命周期接口
+        env:
+          SCF_API_BASE_URL: ${{ secrets.SCF_API_BASE_URL }}
+          TASK_LIFECYCLE_SWEEP_SECRET: ${{ secrets.TASK_LIFECYCLE_SWEEP_SECRET }}
+        run: |
+          API_BASE="${SCF_API_BASE_URL:-https://1455441725-f1qvv2j2lt.ap-guangzhou.tencentscf.com/api}"
+          if [ -n "$TASK_LIFECYCLE_SWEEP_SECRET" ]; then
+            curl -fsS -X POST "$API_BASE/system/task-lifecycle" \
+              -H "Content-Type: application/json" \
+              -H "X-Cron-Secret: $TASK_LIFECYCLE_SWEEP_SECRET"
+          else
+            curl -fsS -X POST "$API_BASE/system/task-lifecycle" \
+              -H "Content-Type: application/json"
+          fi

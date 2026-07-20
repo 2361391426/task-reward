@@ -339,6 +339,7 @@ module.exports = async (req, res) => {
         return { task_id: insertResult.insertId };
       });
 
+      require('../../../lib/cache').clearByPrefix('tasks:list:');
       return res.json(success(result, '任务已创建'));
     } catch (err) {
       console.error('Create task error:', err);
@@ -515,6 +516,7 @@ module.exports = async (req, res) => {
         return { task_id: parseInt(taskId, 10), status: nextStatus };
       });
 
+      require('../../../lib/cache').clearByPrefix('tasks:list:');
       return res.json(success(result, hasEditableFields ? 'Task updated' : 'Task status updated'));
     } catch (err) {
       console.error('Update task error:', err);

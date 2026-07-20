@@ -61,3 +61,32 @@ https://1455441725-f1qvv2j2lt.ap-guangzhou.tencentscf.com/api/tasks?page=1&page_
 ```
 
 能返回任务列表，说明小程序任务大厅可以访问生产接口。
+
+## 定时清理任务状态
+
+仓库里还有一个定时工作流：
+
+```text
+.github/workflows/sweep-task-lifecycle.yml
+```
+
+它每 10 分钟调用一次：
+
+```text
+/api/system/task-lifecycle
+```
+
+作用：
+
+```text
+关闭已到期任务
+释放 1 小时内未提交截图的草稿
+减少用户打开首页和详情时的数据库写操作
+```
+
+可选配置：
+
+```env
+SCF_API_BASE_URL=https://1455441725-f1qvv2j2lt.ap-guangzhou.tencentscf.com/api
+TASK_LIFECYCLE_SWEEP_SECRET=你的定时任务密钥
+```

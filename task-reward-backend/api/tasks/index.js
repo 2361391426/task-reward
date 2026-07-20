@@ -1,4 +1,5 @@
 const db = require('../../lib/db')
+const cache = require('../../lib/cache')
 const { success, error } = require('../../lib/response')
 const { normalizePagination, parsePositiveInt } = require('../../lib/pagination')
 const { normalizeTaskRecord } = require('../../lib/task-lifecycle')
@@ -28,6 +29,17 @@ module.exports = async (req, res) => {
       { page, page_size },
       { defaultPageSize: 10, maxPageSize: 50 }
     )
+    const cacheKey = `tasks:list:${JSON.stringify({
+      page: currentPage,
+      page_size: pageSize,
+      platform: platform || '',
+      status: rawStatus || 1
+    })}`
+    const cached = cache.get(cacheKey)
+    if (cached) {
+      res.setHeader('Cache-Control', 'public, max-age=10')
+      return res.json(success(cached))
+    }
 
     let whereClause = 'WHERE status = ? AND remaining_quota > 0'
     const params = [parsePositiveInt(rawStatus || 1, 1)]
@@ -58,7 +70,7 @@ module.exports = async (req, res) => {
       params.concat([pageSize, offset])
     )
 
-    res.json(success({
+    const payload = {
       total: tasks.length,
       page: currentPage,
       page_size: pageSize,
@@ -73,7 +85,11 @@ module.exports = async (req, res) => {
           product_name: task.product_name || ''
         }
       ))
-    }))
+    }
+
+    cache.set(cacheKey, payload, 10000)
+    res.setHeader('Cache-Control', 'public, max-age=10')
+    res.json(success(payload))
   } catch (err) {
     console.error('Get tasks error:', err)
     res.status(500).json(error(500, '服务器错误'))

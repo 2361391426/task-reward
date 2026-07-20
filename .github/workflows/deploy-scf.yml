@@ -50,6 +50,8 @@ jobs:
           ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD }}
           ADMIN_DISPLAY_NAME: ${{ secrets.ADMIN_DISPLAY_NAME }}
           ADMIN_PHONE: ${{ secrets.ADMIN_PHONE }}
+          TASK_LIFECYCLE_SWEEP_SECRET: ${{ secrets.TASK_LIFECYCLE_SWEEP_SECRET }}
+          DB_QUERY_TIMEOUT_MS: ${{ secrets.DB_QUERY_TIMEOUT_MS }}
         run: |
           $items = [ordered]@{
             DATABASE_URL = $env:DATABASE_URL
@@ -66,6 +68,8 @@ jobs:
             ADMIN_PASSWORD = $env:ADMIN_PASSWORD
             ADMIN_DISPLAY_NAME = $env:ADMIN_DISPLAY_NAME
             ADMIN_PHONE = $env:ADMIN_PHONE
+            TASK_LIFECYCLE_SWEEP_SECRET = $env:TASK_LIFECYCLE_SWEEP_SECRET
+            DB_QUERY_TIMEOUT_MS = $env:DB_QUERY_TIMEOUT_MS
           }
           $lines = @()
           foreach ($key in $items.Keys) {
@@ -91,4 +95,5 @@ jobs:
           SCF_FUNCTION_NAME: ${{ secrets.SCF_FUNCTION_NAME }}
           SCF_NAMESPACE: ${{ secrets.SCF_NAMESPACE }}
           SCF_HANDLER: ${{ secrets.SCF_HANDLER }}
+          SCF_TIMEOUT: ${{ secrets.SCF_TIMEOUT }}
         run: npm run deploy:scf
