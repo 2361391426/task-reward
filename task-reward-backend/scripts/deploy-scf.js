@@ -77,10 +77,12 @@ const signature = hmac(secretSigning, stringToSign, 'hex')
 
 const authorization = [
   'TC3-HMAC-SHA256',
-  `Credential=${secretId}/${credentialScope}`,
-  `SignedHeaders=${signedHeaders}`,
-  `Signature=${signature}`
-].join(', ')
+  [
+    `Credential=${secretId}/${credentialScope}`,
+    `SignedHeaders=${signedHeaders}`,
+    `Signature=${signature}`
+  ].join(', ')
+].join(' ')
 
 const requestOptions = {
   hostname: endpoint,
