@@ -2,7 +2,7 @@
   <view class="container order-page">
     <template v-if="publishMode">
       <view class="page-header">
-        <text class="page-title">我的发单</text>
+        <text class="page-title">我的发布</text>
       </view>
 
       <view class="summary-card card">
@@ -60,14 +60,14 @@
             <text class="info-text">发布时间: {{ formatTime(item.start_time_raw || item.created_at) }}</text>
             <text class="info-text">结束时间: {{ formatTime(item.end_time_raw || item.end_time) }}</text>
             <text class="info-text">名额: {{ item.remaining_quota }}/{{ item.total_quota }}</text>
-            <text class="info-text">奖励金额: ¥{{ item.reward_amount }}</text>
-            <text class="info-text">接单数: {{ Number(item.submission_count || 0) }}</text>
+            <text class="info-text">体验积分: {{ item.reward_amount }}积分</text>
+            <text class="info-text">参与数: {{ Number(item.submission_count || 0) }}</text>
             <text class="info-text">审核中/通过/驳回: {{ Number(item.pending_review || 0) }}/{{ Number(item.approved || 0) }}/{{ Number(item.rejected || 0) }}</text>
           </view>
         </view>
 
         <view v-if="filteredPublishList.length === 0" class="empty">
-          <text>暂无任务发布</text>
+          <text>暂无项目发布</text>
         </view>
       </view>
 
@@ -129,8 +129,8 @@
 
         <view class="item-info">
           <text class="info-text">提交时间: {{ formatTime(item.submit_time) }}</text>
-          <text class="info-text">实付金额: ¥{{ item.paid_amount || 0 }}</text>
-          <text class="info-text">返现金额: ¥{{ item.reward_amount || 0 }}</text>
+          <text class="info-text">实际数值: {{ item.paid_amount || 0 }}</text>
+          <text class="info-text">体验积分: {{ item.reward_amount || 0 }}积分</text>
         </view>
 
         <view class="item-note" v-if="item.review_note">
@@ -214,7 +214,7 @@ export default {
       publishTasks: [],
       publishTabs: [
         { key: 'all', label: '全部订单', status: 'all', count: 0, iconType: 'list', iconColor: '#409eff' },
-        { key: 'publish_pending', label: '待接单', status: 'publish_pending', count: 0, iconType: 'redo', iconColor: '#e6a23c' },
+        { key: 'publish_pending', label: '待参与', status: 'publish_pending', count: 0, iconType: 'redo', iconColor: '#e6a23c' },
         { key: 'publish_progress', label: '进行中', status: 'publish_progress', count: 0, iconType: 'refresh', iconColor: '#67c23a' },
         { key: 'publish_completed', label: '已完成', status: 'publish_completed', count: 0, iconType: 'checkbox-filled', iconColor: '#67c23a' },
         { key: 'publish_cancelled', label: '已撤销', status: 'publish_cancelled', count: 0, iconType: 'closeempty', iconColor: '#f56c6c' }
@@ -228,17 +228,17 @@ export default {
     },
 
     pageTitle() {
-      return this.merchantMode ? '审核中心' : '我的接单'
+      return this.merchantMode ? '审核中心' : '我的参与'
     },
 
     summaryTitle() {
-      return this.merchantMode ? '手机端审核' : '接单记录'
+      return this.merchantMode ? '手机端审核' : '参与记录'
     },
 
     summarySubtitle() {
       return this.merchantMode
-        ? '可直接审核发出去的单并同步后台，待审单优先展示'
-        : '查看全部订单、审核状态和重新提交入口'
+        ? '可直接审核已发布项目并同步后台，待审记录优先展示'
+        : '查看全部参与记录、审核状态和重新提交入口'
     },
 
     publishCurrentTabLabel() {
@@ -246,11 +246,11 @@ export default {
     },
 
     publishSummaryTitle() {
-      return '任务发布记录'
+      return '项目发布记录'
     },
 
     publishSummarySubtitle() {
-      return '点击任务可查看详情，发单账号仅同步状态不参与接单'
+      return '点击项目可查看详情，发布账号仅同步状态不参与项目'
     },
 
     publishCurrentTab() {
@@ -350,8 +350,8 @@ export default {
         this.updateCounts()
         this.applyFilter()
       } catch (error) {
-        console.error('加载接单记录失败', error)
-        this.loadError = '接单记录加载失败，请重试'
+        console.error('加载参与记录失败', error)
+        this.loadError = '参与记录加载失败，请重试'
       } finally {
         this.loading = false
       }
@@ -390,8 +390,8 @@ export default {
         })
         this.updatePublishCounts()
       } catch (error) {
-        console.error('加载任务发布记录失败', error)
-        this.loadError = '任务发布记录加载失败，请重试'
+        console.error('加载项目发布记录失败', error)
+        this.loadError = '项目发布记录加载失败，请重试'
         this.publishTasks = []
       } finally {
         this.publishLoading = false
@@ -400,7 +400,7 @@ export default {
 
     updateNavigationTitle() {
       uni.setNavigationBarTitle({
-        title: this.publishMode ? '我的发单' : (this.merchantMode ? '审核中心' : '我的接单')
+        title: this.publishMode ? '我的发布' : (this.merchantMode ? '审核中心' : '我的参与')
       })
     },
 
@@ -458,7 +458,7 @@ export default {
 
     editSubmission(item) {
       if (!item?.task_id) {
-        uni.showToast({ title: '任务缺失', icon: 'none' })
+        uni.showToast({ title: '项目缺失', icon: 'none' })
         return
       }
       const submissionId = item.id && String(item.id).startsWith('draft-') ? '' : item.id
@@ -540,7 +540,7 @@ export default {
 
     viewPublishTask(item) {
       if (!item || !item.id) {
-        uni.showToast({ title: '任务数据缺失', icon: 'none' })
+        uni.showToast({ title: '项目数据缺失', icon: 'none' })
         return
       }
       uni.navigateTo({

@@ -8,8 +8,7 @@ const DEFAULT_DEV_BASE_URLS = [
 ]
 
 const DEFAULT_PROD_BASE_URLS = [
-  'https://task-reward-vert.vercel.app/api',
-  'https://task-reward-git-main-shaofanglong1.vercel.app/api'
+  'https://1455441725-f1qvv2j2lt.ap-guangzhou.tencentscf.com/api'
 ]
 
 const normalizeBaseUrl = (value) => String(value || '').replace(/\/+$/, '')

@@ -18,7 +18,7 @@ module.exports = async (req, res) => {
   }
 
   if (req.method !== 'GET') {
-    return res.status(405).json(error(405, 'Method not allowed'))
+    return res.status(405).json(error(405, '请求方法不支持'))
   }
 
   try {
@@ -30,7 +30,7 @@ module.exports = async (req, res) => {
     )
 
     let whereClause = 'WHERE status = ? AND remaining_quota > 0'
-    const params = [parsePositiveInt(rawStatus ?? 1, 1)]
+    const params = [parsePositiveInt(rawStatus || 1, 1)]
 
     if (platform) {
       whereClause += ' AND platform = ?'
@@ -48,11 +48,6 @@ module.exports = async (req, res) => {
         AND s.expires_at > NOW()
     )`
 
-    const countResult = await db.queryOne(
-      `SELECT COUNT(*) as total FROM tasks ${whereClause}`,
-      params
-    )
-
     const tasks = await db.query(
       `SELECT id, platform, title, description, reward_amount, total_quota, remaining_quota,
               product_name, start_time, accept_start_time, end_time, status, created_at
@@ -60,22 +55,24 @@ module.exports = async (req, res) => {
        ${whereClause}
        ORDER BY created_at DESC
        LIMIT ? OFFSET ?`,
-      [...params, pageSize, offset]
+      params.concat([pageSize, offset])
     )
 
     res.json(success({
-      total: countResult?.total || 0,
+      total: tasks.length,
       page: currentPage,
       page_size: pageSize,
-      list: tasks.map((task) => ({
-        ...normalizeTaskRecord({
-          ...task,
+      list: tasks.map((task) => Object.assign(
+        {},
+        normalizeTaskRecord(Object.assign({}, task, {
           platform: normalizePlatform(task.platform),
           reward_amount: parseFloat(task.reward_amount),
           status: parsePositiveInt(task.status, 1)
-        }),
-        product_name: task.product_name || ''
-      }))
+        })),
+        {
+          product_name: task.product_name || ''
+        }
+      ))
     }))
   } catch (err) {
     console.error('Get tasks error:', err)

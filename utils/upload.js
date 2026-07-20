@@ -1,9 +1,14 @@
 const IS_DEV = !!import.meta.env.DEV || import.meta.env.MODE === 'development' || import.meta.env.VITE_LOCAL_DEBUG_LOGIN === 'true'
 const IS_WEIXIN_MP = typeof wx !== 'undefined' && typeof wx.uploadFile === 'function'
+
 const DEFAULT_DEV_BASE_URLS = [
   'http://192.168.3.22:3001/api',
   'http://localhost:3001/api',
   'http://127.0.0.1:3001/api'
+]
+
+const DEFAULT_PROD_BASE_URLS = [
+  'https://1455441725-f1qvv2j2lt.ap-guangzhou.tencentscf.com/api'
 ]
 
 const normalizeBaseUrl = (value) => String(value || '').replace(/\/+$/, '')
@@ -18,7 +23,10 @@ const buildBaseUrlList = () => {
 
   if (IS_DEV) {
     urls.push(...DEFAULT_DEV_BASE_URLS.map(normalizeBaseUrl))
+  } else {
+    urls.push(...DEFAULT_PROD_BASE_URLS.map(normalizeBaseUrl))
   }
+
   if (!IS_WEIXIN_MP) {
     urls.push('/api')
   }

@@ -2,36 +2,36 @@
   <view class="page">
     <view class="summary card">
       <view class="summary-item">
-        <text class="summary-label">可提现余额</text>
-        <text class="summary-value">¥{{ availableBalance }}</text>
+        <text class="summary-label">可用积分</text>
+        <text class="summary-value">{{ availableBalance }}积分</text>
       </view>
       <view class="summary-divider"></view>
       <view class="summary-item">
-        <text class="summary-label">冻结中</text>
-        <text class="summary-value muted">¥{{ earnings.frozen_balance || 0 }}</text>
+        <text class="summary-label">冻结积分</text>
+        <text class="summary-value muted">{{ earnings.frozen_balance || 0 }}积分</text>
       </view>
     </view>
 
     <view class="card form-card">
       <view class="form-item">
-        <text class="form-label">提现金额</text>
+        <text class="form-label">兑换积分</text>
         <input
           v-model="form.amount"
           type="digit"
           class="form-input"
-          placeholder="请输入提现金额"
+          placeholder="请输入要兑换的积分"
         />
       </view>
 
       <view class="form-item">
-        <text class="form-label">提现方式</text>
+        <text class="form-label">兑换方式</text>
         <picker :range="withdrawTypes" range-key="label" @change="handleTypeChange">
           <view class="picker-value">{{ currentWithdrawType.label }}</view>
         </picker>
       </view>
 
       <view class="form-item">
-        <text class="form-label">收款账户</text>
+        <text class="form-label">接收账号</text>
         <input
           v-model="form.account_info"
           class="form-input"
@@ -40,26 +40,26 @@
       </view>
 
       <button class="btn-primary submit-btn" :loading="submitting" :disabled="submitting || !canSubmit" @click="submit">
-        提交提现
+        提交兑换申请
       </button>
     </view>
 
     <view class="section">
       <view class="section-header">
-        <text class="section-title">提现记录</text>
+        <text class="section-title">兑换记录</text>
       </view>
 
       <view class="record-list" v-if="withdrawalList.length">
         <view class="record-item card" v-for="item in withdrawalList" :key="item.id">
           <view class="record-top">
-            <text class="record-amount">¥{{ item.amount }}</text>
+            <text class="record-amount">{{ item.amount }}积分</text>
             <view class="status-badge" :class="'status-' + item.status">
               {{ statusText(item.status) }}
             </view>
           </view>
-          <text class="record-text">实际到账：¥{{ item.actual_amount || 0 }}</text>
-          <text class="record-text">手续费：¥{{ item.fee || 0 }}</text>
-          <text class="record-text">账户：{{ item.account_info || '-' }}</text>
+          <text class="record-text">实际兑换：{{ item.actual_amount || 0 }}积分</text>
+          <text class="record-text">服务费：{{ item.fee || 0 }}积分</text>
+          <text class="record-text">账号：{{ item.account_info || '-' }}</text>
           <text class="record-text">时间：{{ formatTime(item.created_at) }}</text>
           <text class="record-text error" v-if="item.reject_reason">原因：{{ item.reject_reason }}</text>
         </view>
@@ -75,7 +75,7 @@
 
       <view v-else class="empty-state">
         <image class="empty-illustration" src="/static/images/hero-wallet.png" mode="aspectFit" />
-        <text>暂无提现记录</text>
+        <text>暂无兑换记录</text>
       </view>
     </view>
   </view>
@@ -124,7 +124,7 @@ export default {
           userId = parsed?.id ? String(parsed.id) : userId
         }
       } catch (error) {
-        console.error('解析提现草稿范围失败', error)
+        console.error('解析兑换草稿范围失败', error)
       }
       return `task-reward:withdraw-draft:${userId}`
     },
@@ -203,7 +203,7 @@ export default {
         const draft = typeof raw === 'string' ? JSON.parse(raw) : raw
         return this.applyDraft(draft)
       } catch (error) {
-        console.error('加载提现草稿失败', error)
+        console.error('加载兑换草稿失败', error)
         return false
       }
     },
@@ -212,7 +212,7 @@ export default {
       try {
         uni.setStorageSync(this.draftKey, JSON.stringify(this.buildDraftPayload()))
       } catch (error) {
-        console.error('保存提现草稿失败', error)
+        console.error('保存兑换草稿失败', error)
       }
     },
 
@@ -228,7 +228,7 @@ export default {
       try {
         uni.removeStorageSync(this.draftKey)
       } catch (error) {
-        console.error('清理提现草稿失败', error)
+        console.error('清理兑换草稿失败', error)
       }
     },
 
@@ -266,8 +266,8 @@ export default {
         this.withdrawalPage = page + 1
         this.withdrawalHasMore = this.withdrawalList.length < total && list.length >= returnedPageSize
       } catch (error) {
-        console.error('加载提现数据失败', error)
-        uni.showToast({ title: '加载提现数据失败', icon: 'none' })
+        console.error('加载兑换数据失败', error)
+        uni.showToast({ title: '加载兑换数据失败', icon: 'none' })
       } finally {
         this.loadingRecords = false
         this.loadingMoreRecords = false
@@ -293,17 +293,17 @@ export default {
     async submit() {
       const amount = Number(this.form.amount)
       if (!amount || amount <= 0) {
-        uni.showToast({ title: '请输入有效金额', icon: 'none' })
+        uni.showToast({ title: '请输入有效积分', icon: 'none' })
         return
       }
 
       if (amount > this.availableBalance) {
-        uni.showToast({ title: '提现金额不能超过可提现余额', icon: 'none' })
+        uni.showToast({ title: '兑换积分不能超过可用积分', icon: 'none' })
         return
       }
 
       if (!this.form.account_info.trim()) {
-        uni.showToast({ title: '请输入收款账户', icon: 'none' })
+        uni.showToast({ title: '请输入接收账号', icon: 'none' })
         return
       }
 
@@ -315,13 +315,13 @@ export default {
           account_info: this.form.account_info.trim()
         })
         invalidateUserCache()
-        uni.showToast({ title: '提现申请已提交', icon: 'success' })
+        uni.showToast({ title: '兑换申请已提交', icon: 'success' })
         this.form.amount = ''
         this.form.account_info = ''
         this.clearDraft()
         await this.loadData(true)
       } catch (error) {
-        console.error('提交提现失败', error)
+        console.error('提交兑换失败', error)
         uni.showToast({ title: '提交失败', icon: 'none' })
       } finally {
         this.submitting = false

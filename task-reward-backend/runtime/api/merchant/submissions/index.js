@@ -46,7 +46,7 @@ module.exports = async (req, res) => {
       }
 
       if (status !== undefined) {
-        whereClause += ' AND s.status = ?';
+        whereClause += ' AND s.review_status = ?';
         params.push(parsePositiveInt(status, 0));
       }
 
@@ -110,8 +110,8 @@ module.exports = async (req, res) => {
             screenshot_cart: sub.screenshot_cart,
             screenshot_paid_order: sub.screenshot_paid_order,
             address_text: sub.address_text || '',
-            status: parsePositiveInt(sub.status, 0),
-            review_status: parsePositiveInt(sub.status, 0),
+            status: parsePositiveInt(sub.review_status, 0),
+            review_status: parsePositiveInt(sub.review_status, 0),
             reject_reason: sub.reject_reason,
             created_at: sub.created_at,
             reviewed_at: sub.reviewed_at

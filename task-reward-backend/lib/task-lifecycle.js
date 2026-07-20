@@ -110,13 +110,14 @@ const sweepTaskLifecycle = async (connection) => {
   if (!expiredIds.length) {
     return { expiredCount: 0 }
   }
+  const expiredTaskPlaceholders = expiredIds.map(() => '?').join(', ')
 
   await connection.query(
     `UPDATE tasks
      SET status = 3,
          updated_at = NOW()
-     WHERE id IN (?)`,
-    [expiredIds]
+     WHERE id IN (${expiredTaskPlaceholders})`,
+    expiredIds
   )
 
   const [draftRows] = await connection.query(
@@ -129,16 +130,16 @@ const sweepTaskLifecycle = async (connection) => {
 
   const expiredDraftIds = draftRows.map((row) => row.id)
   if (expiredDraftIds.length > 0) {
+    const expiredDraftPlaceholders = expiredDraftIds.map(() => '?').join(', ')
     await connection.query(
       `UPDATE submissions
        SET review_status = -4,
-           status = -4,
-           release_reason = '任务超时自动释放',
+           release_reason = '项目超时自动释放',
            released_at = NOW(),
-           review_note = '任务超时自动释放',
+           review_note = '项目超时自动释放',
            updated_at = NOW()
-       WHERE id IN (?)`,
-      [expiredDraftIds]
+       WHERE id IN (${expiredDraftPlaceholders})`,
+      expiredDraftIds
     )
   }
 

@@ -32,6 +32,15 @@ module.exports = async (req, res) => {
     }))
   } catch (err) {
     console.error('Health check failed:', err)
-    return res.status(503).json(error(503, 'Service unhealthy'))
+    return res.status(503).json(error(503, '服务暂不可用', {
+      reason: err && err.message ? err.message : '数据库连接失败',
+      config: {
+        db_mode: process.env.DATABASE_URL ? 'neon' : 'mysql',
+        jwt_secret_set: Boolean(process.env.JWT_SECRET),
+        database_url_set: Boolean(process.env.DATABASE_URL),
+        db_host_set: Boolean(process.env.DB_HOST),
+        db_name_set: Boolean(process.env.DB_NAME)
+      }
+    }))
   }
 }

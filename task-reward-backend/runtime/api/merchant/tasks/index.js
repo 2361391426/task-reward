@@ -101,9 +101,9 @@ module.exports = async (req, res) => {
                 t.search_keyword, t.shop_name, t.product_name, t.product_link, t.requirements,
                 t.start_time, t.accept_start_time, t.end_time, t.status, t.created_at,
                 COUNT(s.id) AS submission_count,
-                SUM(CASE WHEN s.status = 0 THEN 1 ELSE 0 END) AS pending_review,
-                SUM(CASE WHEN s.status = 1 THEN 1 ELSE 0 END) AS approved,
-                SUM(CASE WHEN s.status = 2 THEN 1 ELSE 0 END) AS rejected
+                COALESCE(SUM(CASE WHEN s.review_status = 0 THEN 1 ELSE 0 END), 0) AS pending_review,
+                COALESCE(SUM(CASE WHEN s.review_status = 1 THEN 1 ELSE 0 END), 0) AS approved,
+                COALESCE(SUM(CASE WHEN s.review_status = 2 THEN 1 ELSE 0 END), 0) AS rejected
          FROM tasks t
          LEFT JOIN submissions s ON t.id = s.task_id
          ${whereClause}

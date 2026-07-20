@@ -9,7 +9,7 @@
     {
       "path": "pages/index/index",
       "style": {
-        "navigationBarTitleText": "任务大厅",
+        "navigationBarTitleText": "体验项目",
         "enablePullDownRefresh": true,
         "backgroundTextStyle": "dark"
       }
@@ -17,7 +17,7 @@
     {
       "path": "pages/task-detail/index",
       "style": {
-        "navigationBarTitleText": "任务详情",
+        "navigationBarTitleText": "项目详情",
         "enablePullDownRefresh": true,
         "backgroundTextStyle": "dark"
       }
@@ -25,7 +25,7 @@
     {
       "path": "pages/upload/index",
       "style": {
-        "navigationBarTitleText": "上传截图",
+        "navigationBarTitleText": "提交凭证",
         "enablePullDownRefresh": true,
         "backgroundTextStyle": "dark"
       }
@@ -49,7 +49,7 @@
     {
       "path": "pages/withdraw/index",
       "style": {
-        "navigationBarTitleText": "提现",
+        "navigationBarTitleText": "积分兑换",
         "enablePullDownRefresh": true,
         "backgroundTextStyle": "dark"
       }
@@ -73,7 +73,7 @@
     {
       "path": "pages/orders/index",
       "style": {
-        "navigationBarTitleText": "我的接单",
+        "navigationBarTitleText": "我的参与",
         "enablePullDownRefresh": true,
         "backgroundTextStyle": "dark"
       }
@@ -95,7 +95,7 @@
         "pagePath": "pages/index/index",
         "iconPath": "static/tabbar/task.png",
         "selectedIconPath": "static/tabbar/task-active.png",
-        "text": "任务"
+        "text": "项目"
       },
       {
         "pagePath": "pages/my/index",

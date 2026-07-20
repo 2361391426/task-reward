@@ -1,24 +1,54 @@
-const mysql = require('mysql2/promise')
-const { Client, Pool, neonConfig } = require('@neondatabase/serverless')
 const {
   ensureReturningId,
   isInsertSql,
   isSelectSql,
-  isWriteSql,
   translateMysqlToPostgres
 } = require('./sql-compat')
 
 let mysqlPool = null
 let neonPool = null
+let neonRuntime = null
 
 const isNeonMode = Boolean(process.env.DATABASE_URL)
+const QUERY_TIMEOUT_MS = Number(process.env.DB_QUERY_TIMEOUT_MS || 8000)
 
-if (typeof WebSocket !== 'undefined') {
-  neonConfig.webSocketConstructor = WebSocket
+const getWebSocketConstructor = () => {
+  if (typeof WebSocket !== 'undefined') {
+    return WebSocket
+  }
+
+  try {
+    return require('ws')
+  } catch (error) {
+    return null
+  }
+}
+
+const getNeonRuntime = () => {
+  if (!neonRuntime) {
+    neonRuntime = require('@neondatabase/serverless')
+    const webSocketConstructor = getWebSocketConstructor()
+    if (webSocketConstructor) {
+      neonRuntime.neonConfig.webSocketConstructor = webSocketConstructor
+    }
+  }
+  return neonRuntime
+}
+
+const withTimeout = (promise, timeoutMs, label = '数据库查询超时') => {
+  let timer = null
+  const timeoutPromise = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error(label)), timeoutMs)
+  })
+
+  return Promise.race([promise, timeoutPromise]).finally(() => {
+    if (timer) clearTimeout(timer)
+  })
 }
 
 const getMysqlPool = () => {
   if (!mysqlPool) {
+    const mysql = require('mysql2/promise')
     mysqlPool = mysql.createPool({
       host: process.env.DB_HOST,
       user: process.env.DB_USERNAME,
@@ -41,13 +71,16 @@ const getNeonPool = () => {
       throw new Error('DATABASE_URL is required for Neon mode')
     }
 
+    const { Pool } = getNeonRuntime()
     neonPool = new Pool({
       connectionString: process.env.DATABASE_URL
     })
 
-    neonPool.on?.('error', (err) => {
-      console.warn('[db] Neon pool error:', err?.message || err)
-    })
+    if (typeof neonPool.on === 'function') {
+      neonPool.on('error', (err) => {
+        console.warn('[db] Neon pool error:', err && err.message ? err.message : err)
+      })
+    }
   }
   return neonPool
 }
@@ -68,9 +101,6 @@ const makeMysqlLikeResult = ({ rows, rowCount, insertId = null }) => ({
 
 const runMysqlQuery = async (sql, params = []) => {
   const pool = getMysqlPool()
-  if (isInsertSql(sql) || /RETURNING/i.test(sql)) {
-    return pool.query(sql, params)
-  }
   return pool.query(sql, params)
 }
 
@@ -78,7 +108,11 @@ const runNeonQuery = async (sql, params = [], client = null) => {
   const translatedSql = translateMysqlToPostgres(sql)
   const connection = client || getNeonPool()
   const executableSql = isInsertSql(translatedSql) ? ensureReturningId(translatedSql) : translatedSql
-  const result = await connection.query(executableSql, params)
+  const result = await withTimeout(
+    connection.query(executableSql, params),
+    QUERY_TIMEOUT_MS,
+    `数据库查询超时：${QUERY_TIMEOUT_MS}ms`
+  )
   return {
     sql: executableSql,
     rows: result.rows || [],

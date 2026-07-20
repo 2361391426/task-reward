@@ -46,6 +46,92 @@ const writeAuditLog = async (connection, payload) => {
   );
 };
 
+const createTaskWithNeon = async ({
+  merchantId,
+  operatorId,
+  normalizedPlatform,
+  title,
+  description,
+  parsedReward,
+  parsedQuota,
+  search_keyword,
+  shop_name,
+  product_name,
+  product_link,
+  requirements,
+  start_time,
+  accept_start_time,
+  end_time,
+  totalCost
+}) => {
+  const pool = db.getPool();
+  const detail = {
+    platform: normalizedPlatform,
+    reward_amount: parsedReward,
+    total_quota: parsedQuota
+  };
+  const normalizedRequirements = parseRequirements(requirements);
+  const result = await pool.query(
+    `WITH updated_merchant AS (
+       UPDATE merchants
+       SET balance = balance - $2, updated_at = NOW()
+       WHERE id = $1 AND balance >= $2
+       RETURNING id
+     ),
+     inserted_task AS (
+       INSERT INTO tasks
+       (merchant_id, platform, title, description, reward_amount, total_quota, remaining_quota,
+        search_keyword, shop_name, product_name, product_link, requirements, start_time, accept_start_time, end_time,
+        status, created_at, updated_at)
+       SELECT $1, $3, $4, $5, $6, $7, $7, $8, $9, $10, $11, $12::jsonb, $13, $14, $15, 1, NOW(), NOW()
+       FROM updated_merchant
+       RETURNING id
+     ),
+     inserted_audit AS (
+       INSERT INTO audit_logs
+       (operator_type, operator_id, action, target_type, target_id, summary, detail, created_at)
+       SELECT 'merchant', $16, 'task_create', 'task', id, $17, $18::jsonb, NOW()
+       FROM inserted_task
+       RETURNING target_id
+     )
+     SELECT id AS task_id FROM inserted_task`,
+    [
+      merchantId,
+      totalCost,
+      normalizedPlatform,
+      title,
+      description || null,
+      parsedReward,
+      parsedQuota,
+      search_keyword || null,
+      shop_name || null,
+      product_name || null,
+      product_link || null,
+      normalizedRequirements,
+      start_time || null,
+      accept_start_time || null,
+      end_time || null,
+      operatorId,
+      `创建任务：${title}`,
+      JSON.stringify(detail)
+    ]
+  );
+
+  const task = result.rows[0];
+  if (task) {
+    return { task_id: task.task_id };
+  }
+
+  const merchant = await db.queryOne(
+    'SELECT id, balance FROM merchants WHERE id = ? LIMIT 1',
+    [merchantId]
+  );
+  if (!merchant) {
+    throw new Error('merchant_not_found');
+  }
+  throw new Error('insufficient_balance');
+};
+
 module.exports = async (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PATCH, PUT, OPTIONS');
@@ -101,9 +187,9 @@ module.exports = async (req, res) => {
                 t.search_keyword, t.shop_name, t.product_name, t.product_link, t.requirements,
                 t.start_time, t.accept_start_time, t.end_time, t.status, t.created_at,
                 COUNT(s.id) AS submission_count,
-                SUM(CASE WHEN s.status = 0 THEN 1 ELSE 0 END) AS pending_review,
-                SUM(CASE WHEN s.status = 1 THEN 1 ELSE 0 END) AS approved,
-                SUM(CASE WHEN s.status = 2 THEN 1 ELSE 0 END) AS rejected
+                COALESCE(SUM(CASE WHEN s.review_status = 0 THEN 1 ELSE 0 END), 0) AS pending_review,
+                COALESCE(SUM(CASE WHEN s.review_status = 1 THEN 1 ELSE 0 END), 0) AS approved,
+                COALESCE(SUM(CASE WHEN s.review_status = 2 THEN 1 ELSE 0 END), 0) AS rejected
          FROM tasks t
          LEFT JOIN submissions s ON t.id = s.task_id
          ${whereClause}
@@ -173,7 +259,26 @@ module.exports = async (req, res) => {
 
       const totalCost = parsedReward * parsedQuota;
 
-      const result = await db.transaction(async (connection) => {
+      const result = process.env.DATABASE_URL
+        ? await createTaskWithNeon({
+          merchantId,
+          operatorId,
+          normalizedPlatform,
+          title,
+          description,
+          parsedReward,
+          parsedQuota,
+          search_keyword,
+          shop_name,
+          product_name,
+          product_link,
+          requirements,
+          start_time,
+          accept_start_time,
+          end_time,
+          totalCost
+        })
+        : await db.transaction(async (connection) => {
         const [merchantRows] = await connection.query(
           'SELECT id, balance FROM merchants WHERE id = ? FOR UPDATE',
           [merchantId]
@@ -234,7 +339,7 @@ module.exports = async (req, res) => {
         return { task_id: insertResult.insertId };
       });
 
-      return res.json(success(result, 'Task created'));
+      return res.json(success(result, '任务已创建'));
     } catch (err) {
       console.error('Create task error:', err);
       if (err.message === 'insufficient_balance') {

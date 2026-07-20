@@ -12,6 +12,7 @@ task-reward-backend/backups/
 task-reward-backend/test.db
 
 # IDE
+.codex/
 .vscode/
 .idea/
 *.suo
@@ -36,5 +37,7 @@ yarn-error.log*
 .env.*.local
 .env.production
 .env.deploy
+.env.scf
+task-reward-backend/.env.scf
 merchant-admin/.env.production
 .env.deploy

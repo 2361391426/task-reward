@@ -3,11 +3,11 @@
     <view class="stats-card card">
       <view class="stats-item">
         <text class="stats-value">{{ visibleTaskCount }}</text>
-        <text class="stats-label">可接任务</text>
+        <text class="stats-label">可参与项目</text>
       </view>
       <view class="stats-item">
-        <text class="stats-value">¥{{ totalEarnings }}</text>
-        <text class="stats-label">累计收益</text>
+        <text class="stats-value">{{ totalEarnings }}积分</text>
+        <text class="stats-label">累计积分</text>
       </view>
       <image class="stats-visual" src="/static/images/hero-task.png" mode="aspectFit" />
     </view>
@@ -27,13 +27,13 @@
     </scroll-view>
 
     <view v-if="riskBlocked()" class="risk-panel">
-      <text class="risk-title">当前账号已被标记，禁止接单</text>
+      <text class="risk-title">当前账号已被标记，暂不可参与</text>
       <text class="risk-text">{{ riskReason() || '系统检测到异常身份关联，请联系后台处理' }}</text>
     </view>
 
     <view v-if="publishBlocked()" class="risk-panel">
-      <text class="risk-title">当前账号为发单账号，仅可查看任务详情</text>
-      <text class="risk-text">请到“我的发单”查看自己发布的任务和订单状态，不能在大厅接单。</text>
+      <text class="risk-title">当前账号为发布账号，仅可查看项目详情</text>
+      <text class="risk-text">请到“我的发布”查看自己发布的项目和审核状态，不能参与项目列表。</text>
     </view>
 
     <view v-if="loadError" class="error-panel">
@@ -51,17 +51,17 @@
       >
         <view class="task-header">
           <view class="title-wrap">
-            <text class="task-title">{{ task.title || '任务' }}</text>
+            <text class="task-title">{{ task.title || '体验项目' }}</text>
             <text class="task-platform">{{ platformText(task.platform) }}</text>
           </view>
           <view class="task-reward">
-            <text class="reward-amount">¥{{ task.reward_amount || 0 }}</text>
+            <text class="reward-amount">{{ task.reward_amount || 0 }}积分</text>
           </view>
         </view>
 
         <view class="task-info">
           <text class="info-item">关键词: {{ task.search_keyword || '-' }}</text>
-          <text class="info-item">剩余: {{ remainingQuota(task) }} 单</text>
+          <text class="info-item">剩余名额: {{ remainingQuota(task) }}</text>
         </view>
 
         <view class="task-footer">
@@ -77,12 +77,12 @@
     </view>
 
     <view v-if="!loading && visibleTaskList.length && !taskHasMore" class="load-more">
-      <text>没有更多任务了</text>
+      <text>没有更多项目了</text>
     </view>
 
     <view v-if="!loading && visibleTaskList.length === 0" class="empty">
       <image class="empty-illustration" src="/static/images/empty-task.png" mode="aspectFit" />
-      <text>暂无任务</text>
+      <text>暂无可参与项目</text>
     </view>
 
     <view v-if="loading" class="empty">
@@ -96,6 +96,7 @@
 import { getTaskList, getMySubmissions } from '../../api/task.js'
 import { getEarnings, getUserInfo } from '../../api/user.js'
 import { formatTime, platformText, submissionStatusText } from '../../utils/format.js'
+import { isHighRiskTask, REVIEW_SAFE_MODE } from '../../utils/compliance.js'
 
 const IS_DEV = import.meta.env.DEV
 
@@ -116,18 +117,32 @@ export default {
         { label: '全部', value: '' },
         { label: '淘宝', value: 'taobao' },
         { label: '京东', value: 'jd' },
-        { label: '抖音', value: 'douyin' },
-        { label: '小红书', value: 'xiaohongshu' }
+        ...(REVIEW_SAFE_MODE ? [] : [
+          { label: '抖音', value: 'douyin' },
+          { label: '小红书', value: 'xiaohongshu' }
+        ])
       ],
       submissionMap: {},
       userInfo: {},
-      loadError: ''
+      loadError: '',
+      autoRefreshTimer: null,
+      autoRefreshing: false,
+      autoRefreshIntervalMs: 12000
     }
   },
 
   onShow() {
     this.restorePlatformFilter()
     this.refreshData(true)
+    this.startAutoRefresh()
+  },
+
+  onHide() {
+    this.stopAutoRefresh()
+  },
+
+  onUnload() {
+    this.stopAutoRefresh()
   },
 
   async onPullDownRefresh() {
@@ -148,7 +163,7 @@ export default {
   onShareAppMessage() {
     const platform = this.platformTabs.find(tab => tab.value === this.currentPlatform)?.label || '全部'
     return {
-      title: `任务大厅 - ${platform}任务`,
+      title: `体验项目 - ${platform}`,
       path: '/pages/index/index'
     }
   },
@@ -182,8 +197,11 @@ export default {
       return list.filter(task => String(task.platform || '') === this.currentPlatform)
     },
 
-    async refreshData() {
-      this.loadError = ''
+    async refreshData(forceRefresh = true, options = {}) {
+      const silent = options.silent === true
+      if (!silent) {
+        this.loadError = ''
+      }
       this.taskPage = 1
       this.taskHasMore = true
       if (IS_DEV) {
@@ -193,7 +211,7 @@ export default {
         return
       }
       try {
-        const taskLoaded = await this.loadTasks(true)
+        const taskLoaded = await this.loadTasks(forceRefresh, { silent })
         const visibleTaskIds = this.taskList.map(task => String(task.id)).filter(Boolean)
         const hasToken = this.isLoggedIn()
         let statsLoaded = true
@@ -213,20 +231,25 @@ export default {
           this.submissionMap = {}
         }
 
-        if (!taskLoaded && !this.loadError) {
-          this.loadError = '首页任务加载失败，请重试'
-        } else if (hasToken && (!statsLoaded || !submissionsLoaded) && !this.loadError) {
+        if (!silent && !taskLoaded && !this.loadError) {
+          this.loadError = '首页项目加载失败，请重试'
+        } else if (!silent && hasToken && (!statsLoaded || !submissionsLoaded) && !this.loadError) {
           this.loadError = '部分数据加载失败，请稍后重试'
         }
       } catch (error) {
         console.error('刷新首页失败', error)
-        this.loadError = this.loadError || '首页加载失败，请重试'
+        if (!silent) {
+          this.loadError = this.loadError || '首页加载失败，请重试'
+        }
       }
     },
 
-    async loadTasks(forceRefresh = false) {
-      this.loading = true
-      if (!forceRefresh) {
+    async loadTasks(forceRefresh = false, options = {}) {
+      const silent = options.silent === true
+      if (!silent) {
+        this.loading = true
+      }
+      if (!forceRefresh && !silent) {
         this.loadingMore = true
       }
       try {
@@ -239,7 +262,7 @@ export default {
         }
         const res = await getTaskList(params, { forceRefresh })
         const list = Array.isArray(res && res.list) ? res.list : []
-        const normalizedList = this.filterTasksByPlatform(list)
+        const normalizedList = this.filterTasksByPlatform(list).filter(task => !isHighRiskTask(task))
         const nextTaskList = forceRefresh
           ? normalizedList
           : this.taskList.concat(normalizedList)
@@ -254,15 +277,21 @@ export default {
           this.taskHasMore = normalizedList.length >= pageSize
         }
         this.taskPage += 1
-        this.loading = false
-        this.loadingMore = false
+        if (!silent) {
+          this.loading = false
+          this.loadingMore = false
+        }
         return true
       } catch (error) {
-        console.error('加载任务失败', error)
-        this.loading = false
-        this.loadingMore = false
-        this.taskHasMore = false
-        this.loadError = this.loadError || '首页任务加载失败，请重试'
+        console.error('加载项目失败', error)
+        if (!silent) {
+          this.loading = false
+          this.loadingMore = false
+        }
+        if (!silent) {
+          this.taskHasMore = false
+          this.loadError = this.loadError || '首页项目加载失败，请重试'
+        }
         return false
       }
     },
@@ -379,7 +408,7 @@ export default {
 
     goToDetail(id) {
       if (!id) {
-        uni.showToast({ title: '任务信息缺失', icon: 'none' })
+        uni.showToast({ title: '项目信息缺失', icon: 'none' })
         return
       }
       uni.navigateTo({
@@ -389,6 +418,36 @@ export default {
 
     retryLoad() {
       this.refreshData()
+    },
+
+    startAutoRefresh() {
+      this.stopAutoRefresh()
+      if (IS_DEV) {
+        return
+      }
+      this.autoRefreshTimer = setInterval(() => {
+        this.refreshTasksSilently()
+      }, this.autoRefreshIntervalMs)
+    },
+
+    stopAutoRefresh() {
+      if (!this.autoRefreshTimer) {
+        return
+      }
+      clearInterval(this.autoRefreshTimer)
+      this.autoRefreshTimer = null
+    },
+
+    async refreshTasksSilently() {
+      if (this.autoRefreshing || this.loading || this.loadingMore) {
+        return
+      }
+      this.autoRefreshing = true
+      try {
+        await this.refreshData(true, { silent: true })
+      } finally {
+        this.autoRefreshing = false
+      }
     },
 
     loadMoreTasks() {
@@ -404,7 +463,7 @@ export default {
           return this.loadMySubmissions(false, appendedTaskIds)
         })
         .catch((error) => {
-          console.error('加载更多任务失败', error)
+          console.error('加载更多项目失败', error)
         })
     },
 
@@ -479,14 +538,14 @@ export default {
         return '仅查看详情'
       }
       if (this.riskBlocked()) {
-        return '禁止接单'
+        return '暂不可参与'
       }
       const submission = this.submissionMap[String(task.id)]
       if (!submission) {
         if (this.acceptNotStarted(task)) {
-          return '待接单'
+          return '待开放'
         }
-        return '立即参与'
+        return '参与体验'
       }
       const status = Number(submission.review_status)
       if (status === 2) {
@@ -507,10 +566,10 @@ export default {
       return [
         {
           id: 1,
-          title: '抖音浏览任务',
+          title: '内容浏览体验',
           platform: 'douyin',
           reward_amount: 3.2,
-          search_keyword: '任务返现',
+          search_keyword: '体验反馈',
           remaining_quota: 5,
           total_quota: 20,
           used_quota: 15,
@@ -518,7 +577,7 @@ export default {
         },
         {
           id: 2,
-          title: '淘宝收藏任务',
+          title: '商品页面体验',
           platform: 'taobao',
           reward_amount: 2.8,
           search_keyword: '精选好物',

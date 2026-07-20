@@ -118,6 +118,22 @@ export default {
       }
     },
 
+    applyProfile(source = {}, options = {}) {
+      const nextUser = {
+        ...this.userInfo,
+        ...(source || {})
+      }
+      this.userInfo = nextUser
+      this.fillForm(nextUser)
+      try {
+        uni.setStorageSync('userInfo', nextUser)
+      } catch (error) {}
+      if (options.emit !== false) {
+        uni.$emit('user-info-updated', nextUser)
+      }
+      return nextUser
+    },
+
     loadProfile(fetchRemote = true) {
       if (!this.ensureLoggedIn()) {
         return
@@ -127,8 +143,7 @@ export default {
         const cached = uni.getStorageSync('userInfo')
         const parsed = cached ? (typeof cached === 'string' ? JSON.parse(cached) : cached) : {}
         if (parsed && typeof parsed === 'object') {
-          this.userInfo = parsed
-          this.fillForm(parsed)
+          this.applyProfile(parsed, { emit: false })
         }
       } catch (error) {
         console.error('读取本地用户资料失败', error)
@@ -147,14 +162,7 @@ export default {
       try {
         const res = await getUserInfo()
         if (res && typeof res === 'object') {
-          const nextUser = {
-            ...this.userInfo,
-            ...res
-          }
-          this.userInfo = nextUser
-          this.fillForm(nextUser)
-          uni.setStorageSync('userInfo', nextUser)
-          uni.$emit('user-info-updated', nextUser)
+          this.applyProfile(res)
         }
       } catch (error) {
         console.error('获取最新用户资料失败', error)
@@ -289,10 +297,7 @@ export default {
           phone: res?.phone || this.userInfo.phone || '',
           phone_raw: res?.phone_raw || phone
         }
-        this.userInfo = nextUser
-        this.fillForm(nextUser)
-        uni.setStorageSync('userInfo', nextUser)
-        uni.$emit('user-info-updated', nextUser)
+        this.applyProfile(nextUser)
         if (!silent) {
           uni.showToast({ title: '保存成功', icon: 'success' })
         }

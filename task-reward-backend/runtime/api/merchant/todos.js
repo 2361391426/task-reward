@@ -37,6 +37,7 @@ module.exports = async (req, res) => {
 
     const merchantId = auth.merchant.id;
     const reviewTimeoutHours = await readConfigNumber('task_review_timeout', 24);
+    const reviewCutoff = new Date(Date.now() - reviewTimeoutHours * 60 * 60 * 1000);
 
     await db.transaction(async (connection) => {
       await syncExpiredTasks(connection);
@@ -54,12 +55,12 @@ module.exports = async (req, res) => {
 
     const pendingReviewRow = await db.queryOne(
       `SELECT COUNT(*) AS total
-       FROM submissions s
+         FROM submissions s
        JOIN tasks t ON t.id = s.task_id
        WHERE t.merchant_id = ?
-         AND s.status = 0
-         AND s.created_at <= DATE_SUB(NOW(), INTERVAL ? HOUR)`,
-      [merchantId, reviewTimeoutHours]
+         AND s.review_status = 0
+         AND s.created_at <= ?`,
+      [merchantId, reviewCutoff]
     );
 
     const pendingWithdrawalsRow = await db.queryOne(
@@ -71,16 +72,16 @@ module.exports = async (req, res) => {
     );
 
     const overdueReviews = await db.query(
-      `SELECT s.id, s.task_id, s.user_id, s.created_at, s.status, t.title AS task_title, u.nickname AS user_nickname
+      `SELECT s.id, s.task_id, s.user_id, s.created_at, s.review_status AS status, t.title AS task_title, u.nickname AS user_nickname
        FROM submissions s
        JOIN tasks t ON t.id = s.task_id
        JOIN users u ON u.id = s.user_id
        WHERE t.merchant_id = ?
-         AND s.status = 0
-         AND s.created_at <= DATE_SUB(NOW(), INTERVAL ? HOUR)
+         AND s.review_status = 0
+         AND s.created_at <= ?
        ORDER BY s.created_at ASC
        LIMIT 10`,
-      [merchantId, reviewTimeoutHours]
+      [merchantId, reviewCutoff]
     );
 
     return res.json(success({

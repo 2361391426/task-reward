@@ -37,7 +37,7 @@ export const saveStartedTaskDraft = (task = {}) => {
   const draft = {
     id: `draft-${taskId}`,
     task_id: taskId,
-    task_title: task.task_title || task.title || '任务',
+    task_title: task.task_title || task.title || '体验项目',
     platform: task.platform || '',
     reward_amount: Number(task.reward_amount || 0),
     total_quota: Number(task.total_quota || 0),

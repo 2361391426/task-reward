@@ -1,35 +1,39 @@
+import { REVIEW_SAFE_MODE } from './compliance.js'
+
 const SOCIAL_PLATFORMS = new Set(['douyin', 'xiaohongshu'])
 
 const STEP_DEFINITIONS = [
   {
     id: 1,
     key: 'search',
-    name: '搜索关键词截图',
+    name: '搜索结果截图',
     count: 1,
     fieldNames: ['screenshot_search']
   },
   {
     id: 2,
     key: 'shop',
-    name: '浏览店铺截图',
+    name: '页面浏览截图',
     count: 3,
     fieldNames: ['screenshot_shop_1', 'screenshot_shop_2', 'screenshot_shop_3']
   },
   {
     id: 3,
     key: 'follow',
-    name: '关注/评论截图',
+    name: '互动凭证截图',
     count: 1,
     fieldNames: ['screenshot_follow'],
-    socialOnly: true
+    socialOnly: true,
+    highRisk: true
   },
   {
     id: 4,
     key: 'share',
-    name: '分享截图',
+    name: '补充凭证截图',
     count: 1,
     fieldNames: ['screenshot_share'],
-    socialOnly: true
+    socialOnly: true,
+    highRisk: true
   },
   {
     id: 5,
@@ -41,16 +45,17 @@ const STEP_DEFINITIONS = [
   {
     id: 6,
     key: 'cart',
-    name: '加购截图',
+    name: '体验过程截图',
     count: 1,
     fieldNames: ['screenshot_cart']
   },
   {
     id: 7,
     key: 'paid_order',
-    name: '实付款订单截图',
+    name: '交易凭证截图',
     count: 1,
-    fieldNames: ['screenshot_paid_order']
+    fieldNames: ['screenshot_paid_order'],
+    highRisk: true
   }
 ]
 
@@ -66,7 +71,12 @@ export const isSocialPlatform = (platform) => SOCIAL_PLATFORMS.has(normalizePlat
 
 export const getSubmissionStepDefinitions = (platform) => {
   const social = isSocialPlatform(platform)
-  return STEP_DEFINITIONS.filter((item) => social || !item.socialOnly).map(({ socialOnly, ...item }) => item)
+  return STEP_DEFINITIONS
+    .filter((item) => {
+      if (REVIEW_SAFE_MODE && item.highRisk) return false
+      return social || !item.socialOnly
+    })
+    .map(({ socialOnly, highRisk, ...item }) => item)
 }
 
 const cloneImages = (images = []) => {

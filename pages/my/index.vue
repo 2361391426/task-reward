@@ -31,7 +31,7 @@
     <view v-else-if="!userInfo.phone" class="panel card login-panel">
       <view class="login-panel-header">
         <text class="login-panel-title">手机号授权</text>
-        <text class="login-panel-desc">微信官方授权后可自动回显手机号，并用于接单校验</text>
+        <text class="login-panel-desc">微信官方授权后可自动回显手机号，并用于参与资格校验</text>
       </view>
       <view class="login-actions">
         <button
@@ -48,18 +48,18 @@
 
     <view class="wallet-card card">
       <view class="wallet-main">
-        <text class="wallet-title">我的钱包</text>
-        <text class="wallet-amount">¥{{ Number(userInfo.available_balance || 0).toFixed(2) }}</text>
+        <text class="wallet-title">积分兑换</text>
+        <text class="wallet-amount">{{ Number(userInfo.available_balance || 0).toFixed(2) }}积分</text>
       </view>
       <view class="wallet-side">
-        <text class="wallet-link" @click="goWithdraw">进入钱包</text>
-        <button class="wallet-btn" @click="goWithdraw">提现</button>
+        <text class="wallet-link" @click="goWithdraw">查看明细</text>
+        <button class="wallet-btn" @click="goWithdraw">申请兑换</button>
       </view>
     </view>
 
     <view class="panel card">
       <view class="panel-header">
-        <text class="panel-title">我的发单</text>
+        <text class="panel-title">我的发布</text>
       </view>
       <view class="quick-grid">
         <view
@@ -76,7 +76,7 @@
 
     <view class="panel card">
       <view class="panel-header">
-        <text class="panel-title">我的接单</text>
+        <text class="panel-title">我的参与</text>
       </view>
       <view class="quick-grid">
         <view
@@ -104,9 +104,9 @@
           <uni-icons class="utility-icon" type="compose" color="#409eff" size="24" />
           <text class="utility-text">意见反馈</text>
         </view>
-        <view class="utility-item" @click="inviteFriend">
-          <uni-icons class="utility-icon" type="gift-filled" color="#f39c12" size="24" />
-          <text class="utility-text">邀请好友</text>
+        <view class="utility-item" @click="openHelp">
+          <uni-icons class="utility-icon" type="help" color="#f39c12" size="24" />
+          <text class="utility-text">帮助中心</text>
         </view>
       </view>
     </view>
@@ -150,6 +150,7 @@ export default {
         nickname: '',
         avatar: ''
       },
+      sessionVersion: 0,
       userInfoUpdateListener: null,
       publishFilterKey: 'all',
       allPublishTasks: [],
@@ -169,6 +170,7 @@ export default {
 
   computed: {
     isLoggedIn() {
+      this.sessionVersion
       try {
         return Boolean(uni.getStorageSync('token'))
       } catch (error) {
@@ -228,7 +230,7 @@ export default {
       return [
         { key: 'publish_review', label: '审核中心', iconType: 'gear-filled', iconColor: '#8b5cf6' },
         { key: 'publish_all', label: '全部订单', iconType: 'list', iconColor: '#409eff' },
-        { key: 'publish_pending', label: '待接单', iconType: 'redo', iconColor: '#e6a23c' },
+        { key: 'publish_pending', label: '待参与', iconType: 'redo', iconColor: '#e6a23c' },
         { key: 'publish_progress', label: '进行中', iconType: 'refresh', iconColor: '#67c23a' },
         { key: 'publish_completed', label: '已完成', iconType: 'checkbox-filled', iconColor: '#67c23a' },
         { key: 'publish_cancelled', label: '已撤销', iconType: 'closeempty', iconColor: '#f56c6c' }
@@ -237,7 +239,7 @@ export default {
 
     receiverActions() {
       return [
-        { key: 'all_orders', label: '全部订单', iconType: 'list', iconColor: '#409eff' },
+        { key: 'all_orders', label: '全部记录', iconType: 'list', iconColor: '#409eff' },
         { key: 'pending', label: '待审核', iconType: 'redo', iconColor: '#e6a23c' },
         { key: 'approved', label: '已通过', iconType: 'checkbox-filled', iconColor: '#67c23a' },
         { key: 'rejected', label: '已驳回', iconType: 'closeempty', iconColor: '#f56c6c' },
@@ -352,6 +354,8 @@ export default {
         return
       }
       try {
+        await this.refreshUserProfile()
+
         const submissions = []
         let page = 1
         let hasMore = true
@@ -373,32 +377,6 @@ export default {
           }
         }
 
-        let userInfoRes = {}
-        let earningsRes = { total_earnings: 0, available_balance: 0, frozen_balance: 0 }
-
-        if (IS_DEV) {
-          try {
-            const cached = uni.getStorageSync('userInfo')
-            userInfoRes = cached ? (typeof cached === 'string' ? JSON.parse(cached) : cached) : {}
-          } catch (error) {
-            userInfoRes = {}
-          }
-        } else {
-          userInfoRes = await getUserInfo()
-          try {
-            earningsRes = await getEarnings()
-          } catch (error) {
-            console.error('加载收益信息失败', error)
-          }
-        }
-
-        this.userInfo = {
-          ...(userInfoRes || {}),
-          total_earnings: earningsRes?.total_earnings || 0,
-          available_balance: earningsRes?.available_balance || 0,
-          frozen_balance: earningsRes?.frozen_balance || 0
-        }
-        this.syncProfileForm()
         this.allSubmissions = submissions || []
         this.updateTabCounts()
         this.filterSubmissions()
@@ -561,6 +539,62 @@ export default {
       } catch (error) {}
     },
 
+    touchSessionState() {
+      this.sessionVersion += 1
+    },
+
+    applyUserProfile(profile = {}, options = {}) {
+      const nextUser = {
+        ...this.userInfo,
+        ...(profile || {}),
+        total_earnings: profile.total_earnings ?? this.userInfo.total_earnings ?? 0,
+        available_balance: profile.available_balance ?? this.userInfo.available_balance ?? 0,
+        frozen_balance: profile.frozen_balance ?? this.userInfo.frozen_balance ?? 0
+      }
+
+      this.userInfo = nextUser
+      this.syncProfileForm(nextUser)
+      try {
+        uni.setStorageSync('userInfo', nextUser)
+      } catch (error) {}
+      if (options.emit === true) {
+        uni.$emit('user-info-updated', nextUser)
+      }
+      if (nextUser.phone) {
+        this.rememberLoginPhone(nextUser.phone)
+      }
+      this.touchSessionState()
+      return nextUser
+    },
+
+    async refreshUserProfile() {
+      if (!this.isLoggedIn) {
+        return null
+      }
+
+      let profile = {}
+      try {
+        profile = await getUserInfo()
+      } catch (error) {
+        console.error('刷新用户资料失败', error)
+        return this.userInfo
+      }
+
+      let earnings = {}
+      try {
+        earnings = await getEarnings()
+      } catch (error) {
+        console.error('加载积分信息失败', error)
+      }
+
+      return this.applyUserProfile({
+        ...(profile || {}),
+        total_earnings: earnings?.total_earnings ?? profile?.total_earnings ?? 0,
+        available_balance: earnings?.available_balance ?? profile?.available_balance ?? 0,
+        frozen_balance: earnings?.frozen_balance ?? profile?.frozen_balance ?? 0
+      })
+    },
+
     goTaskHall() {
       uni.switchTab({
         url: '/pages/index/index'
@@ -583,7 +617,7 @@ export default {
       this.allSubmissions = [
         {
           id: 1,
-          task_title: '抖音浏览任务',
+          task_title: '内容浏览体验',
           platform: 'douyin',
           review_status: 0,
           submit_time: new Date().toISOString(),
@@ -592,7 +626,7 @@ export default {
         },
         {
           id: 2,
-          task_title: '淘宝收藏任务',
+          task_title: '商品页面体验',
           platform: 'taobao',
           review_status: 2,
           submit_time: new Date().toISOString(),
@@ -603,14 +637,14 @@ export default {
       this.allPublishTasks = [
         {
           id: 1001,
-          title: '抖音浏览任务',
+          title: '内容浏览体验',
           platform: 'douyin',
           status: 1,
           publication_status: 'published',
           publication_status_text: '已发布',
           publication_status_tag_type: 'success',
           accept_status: 'accept_open',
-          accept_status_text: '可接单',
+          accept_status_text: '可参与',
           accept_status_tag_type: 'success',
           remaining_quota: 20,
           total_quota: 50,
@@ -621,7 +655,7 @@ export default {
         },
         {
           id: 1002,
-          title: '淘宝收藏任务',
+          title: '商品页面体验',
           platform: 'taobao',
           status: 2,
           publication_status: 'paused',
@@ -897,8 +931,8 @@ export default {
               return getMerchantTasks({ page, page_size: pageSizeValue })
             })
           } catch (error) {
-            console.warn('商家任务接口加载失败', error)
-            this.loadError = '任务发布记录加载失败，请稍后重试'
+            console.warn('商家项目接口加载失败', error)
+            this.loadError = '项目发布记录加载失败，请稍后重试'
             tasks = []
           }
         } else {
@@ -912,7 +946,7 @@ export default {
 
         this.allPublishTasks = tasks
       } catch (error) {
-        console.error('加载任务发布记录失败', error)
+        console.error('加载项目发布记录失败', error)
         this.allPublishTasks = []
       } finally {
         this.publishLoading = false
@@ -1014,6 +1048,7 @@ export default {
 
         if (res?.token) {
           uni.setStorageSync('token', res.token)
+          this.touchSessionState()
         }
 
         requestTaskSubscribeMessage()
@@ -1027,9 +1062,6 @@ export default {
             }
           } catch (error) {
             console.error('登录后获取用户信息失败', error)
-            if (!IS_DEV) {
-              throw error
-            }
           }
         }
 
@@ -1040,27 +1072,19 @@ export default {
           frozen_balance: profile.frozen_balance || 0
         }
 
-        this.userInfo = {
+        this.applyUserProfile({
+          ...this.userInfo,
           ...userInfo,
           nickname: userInfo.nickname || loginProfile.nickname || '未登录',
           avatar: userInfo.avatar || loginProfile.avatar || ''
-        }
-        this.syncProfileForm(this.userInfo)
-        uni.setStorageSync('userInfo', this.userInfo)
-        uni.$emit('user-info-updated', this.userInfo)
-        if (this.userInfo.phone) {
-          this.rememberLoginPhone(this.userInfo.phone)
-        }
+        })
 
         this.updateNavigationTitle()
         if (!usedLocalFallback) {
           try {
             await this.refreshData(true)
           } catch (error) {
-            if (!IS_DEV) {
-              throw error
-            }
-            console.warn('开发环境登录后刷新失败，已保留本地登录态', error)
+            console.warn('登录后刷新数据失败，已保留登录态', error)
           }
         }
         uni.showToast({ title: '登录成功', icon: 'success' })
@@ -1128,6 +1152,7 @@ export default {
         uni.removeStorageSync('token')
         uni.removeStorageSync('userInfo')
         uni.removeStorageSync('task-reward:phone-number')
+        this.touchSessionState()
         this.userInfo = {}
         this.allSubmissions = []
         this.submissionList = []
@@ -1162,10 +1187,10 @@ export default {
         this.bindingPhone = true
         const res = await bindUserPhone(code)
         const latestPhone = res?.masked_phone || res?.phone || ''
-        this.userInfo = {
+        this.applyUserProfile({
           ...this.userInfo,
           phone: latestPhone || this.userInfo.phone
-        }
+        })
         if (latestPhone) {
           this.rememberLoginPhone(latestPhone)
         }
@@ -1177,7 +1202,7 @@ export default {
         try {
           const cached = uni.getStorageSync('userInfo')
           const parsed = cached ? (typeof cached === 'string' ? JSON.parse(cached) : cached) : {}
-          uni.setStorageSync('userInfo', {
+          this.applyUserProfile({
             ...parsed,
             phone: res?.masked_phone || latestPhone || parsed.phone || ''
           })
@@ -1220,16 +1245,12 @@ export default {
       })
     },
 
-    inviteFriend() {
-      try {
-        uni.showShareMenu({
-          withShareTicket: true,
-          menus: ['shareAppMessage', 'shareTimeline']
-        })
-      } catch (error) {}
-      uni.showToast({
-        title: '请点击右上角分享给好友',
-        icon: 'none'
+    openHelp() {
+      uni.showModal({
+        title: '帮助中心',
+        content: '如需帮助，请通过意见反馈提交问题，平台会尽快处理。',
+        showCancel: false,
+        confirmText: '知道了'
       })
     },
 
@@ -1239,7 +1260,7 @@ export default {
 
     viewPublishTask(item) {
       if (!item || !item.id) {
-        uni.showToast({ title: '任务数据缺失', icon: 'none' })
+        uni.showToast({ title: '项目数据缺失', icon: 'none' })
         return
       }
       uni.navigateTo({

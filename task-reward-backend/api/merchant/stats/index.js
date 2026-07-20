@@ -31,14 +31,14 @@ module.exports = async (req, res) => {
     const merchantId = auth.merchant.id;
     const monthKey = normalizeMonthKey(req.query.month_key);
 
-    const [rows] = await db.getPool().query(
+    const rows = await db.query(
       `SELECT
          t.platform,
          DATE_FORMAT(s.created_at, '%Y-%m') AS month_key,
          COUNT(*) AS submission_count,
-         SUM(CASE WHEN s.status = 0 THEN 1 ELSE 0 END) AS pending_count,
-         SUM(CASE WHEN s.status = 1 THEN 1 ELSE 0 END) AS approved_count,
-         SUM(CASE WHEN s.status = 2 THEN 1 ELSE 0 END) AS rejected_count,
+         COALESCE(SUM(CASE WHEN s.review_status = 0 THEN 1 ELSE 0 END), 0) AS pending_count,
+         COALESCE(SUM(CASE WHEN s.review_status = 1 THEN 1 ELSE 0 END), 0) AS approved_count,
+         COALESCE(SUM(CASE WHEN s.review_status = 2 THEN 1 ELSE 0 END), 0) AS rejected_count,
          COALESCE(SUM(s.paid_amount), 0) AS total_paid_amount,
          COALESCE(SUM(s.reward_amount), 0) AS total_reward_amount
        FROM submissions s

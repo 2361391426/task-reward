@@ -23,12 +23,12 @@
           <text class="value">{{ platformText(submission.platform) }}</text>
         </view>
         <view class="info-item">
-          <text class="label">实付金额</text>
-          <text class="value">¥{{ submission.paid_amount || 0 }}</text>
+          <text class="label">实际数值</text>
+          <text class="value">{{ submission.paid_amount || 0 }}</text>
         </view>
         <view class="info-item">
-          <text class="label">返现金额</text>
-          <text class="value">¥{{ submission.reward_amount || 0 }}</text>
+          <text class="label">体验积分</text>
+          <text class="value">{{ submission.reward_amount || 0 }}积分</text>
         </view>
         <view class="info-item">
           <text class="label">提交时间</text>
@@ -45,7 +45,7 @@
       </view>
 
       <view class="screenshots-card card">
-        <text class="section-title">提交截图</text>
+        <text class="section-title">提交凭证</text>
 
         <view class="screenshot-section" v-for="(section, index) in screenshotSections" :key="index">
           <text class="screenshot-label">{{ section.label }}</text>
@@ -60,14 +60,14 @@
             />
           </view>
           <view class="screenshot-empty" v-else>
-            <text>暂无截图</text>
+            <text>暂无凭证</text>
           </view>
         </view>
       </view>
 
       <view class="footer" v-if="Number(submission.review_status) === 2 || Number(submission.review_status) === -1">
         <button class="btn-primary" @click="resubmit">
-          {{ Number(submission.review_status) === -1 ? '编辑订单' : '重新提交' }}
+          {{ Number(submission.review_status) === -1 ? '编辑记录' : '重新提交' }}
         </button>
       </view>
     </template>
@@ -176,7 +176,7 @@ export default {
 
     resubmit() {
       if (!this.submission.task_id) {
-        uni.showToast({ title: '任务信息缺失，无法重新提交', icon: 'none' })
+        uni.showToast({ title: '项目信息缺失，无法重新提交', icon: 'none' })
         return
       }
       uni.navigateTo({

@@ -2,15 +2,15 @@
   <view class="container">
     <view class="detail-card card">
       <view class="header">
-        <text class="title">{{ task.title || '任务详情' }}</text>
+        <text class="title">{{ task.title || '项目详情' }}</text>
         <view class="reward">
-          <text class="reward-label">任务奖励</text>
-          <text class="reward-amount">¥{{ task.reward_amount || 0 }}</text>
+          <text class="reward-label">体验积分</text>
+          <text class="reward-amount">{{ task.reward_amount || 0 }}积分</text>
         </view>
       </view>
 
       <view v-if="loading && !task.title && !loadError" class="loading-panel">
-        <text class="loading-text">正在加载任务详情...</text>
+        <text class="loading-text">正在加载项目详情...</text>
       </view>
 
       <view v-if="loadError" class="error-panel">
@@ -20,23 +20,23 @@
       </view>
 
       <view v-if="riskBlocked" class="risk-panel">
-        <text class="risk-title">当前账号已被标记，禁止接单</text>
+        <text class="risk-title">当前账号已被标记，暂不可参与</text>
         <text class="risk-text">{{ riskReason || '系统检测到异常身份关联，请联系后台处理。' }}</text>
       </view>
 
       <view v-if="publishBlocked" class="risk-panel">
-        <text class="risk-title">当前账号为发单账号，仅可查看详情</text>
-        <text class="risk-text">发单账号不能在大厅接单，如需查看订单状态请到“我的发单”。</text>
+        <text class="risk-title">当前账号为发布账号，仅可查看详情</text>
+        <text class="risk-text">发布账号不能参与项目列表，如需查看状态请到“我的发布”。</text>
       </view>
 
       <view v-if="acceptNotStarted" class="notice-panel">
-        <text class="notice-title">任务已发布，待接单</text>
-        <text class="notice-text">可接单时间：{{ acceptStartTimeText }}</text>
+        <text class="notice-title">项目已发布，待开放参与</text>
+        <text class="notice-text">可参与时间：{{ acceptStartTimeText }}</text>
       </view>
 
       <view v-if="taskClaimReminderVisible" class="deadline-panel">
-        <text class="deadline-title">领取后请在 1 小时内提交截图</text>
-        <text class="deadline-text">剩余时间：{{ taskClaimCountdownText }}，超时将自动释放任务，今日无法再次接单。</text>
+        <text class="deadline-title">参与后请在 1 小时内提交凭证</text>
+        <text class="deadline-text">剩余时间：{{ taskClaimCountdownText }}，超时后名额将自动释放，今日无法再次参与。</text>
       </view>
 
       <view class="status-panel" v-if="submission">
@@ -93,25 +93,25 @@
           <text class="value">{{ remainingQuotaText }}</text>
         </view>
         <view class="info-item">
-          <text class="label">可接单时间</text>
+          <text class="label">可参与时间</text>
           <text class="value">{{ acceptStartTimeText }}</text>
         </view>
       </view>
 
       <view class="requirements">
-        <text class="section-title">任务要求</text>
+        <text class="section-title">体验要求</text>
         <view class="req-list">
           <view class="req-item">
             <text class="req-num">1</text>
-            <text class="req-text">按要求浏览商品并完成操作</text>
+            <text class="req-text">按要求完成页面体验并保留必要凭证</text>
           </view>
           <view class="req-item">
             <text class="req-num">2</text>
-            <text class="req-text">提交实付截图和相关步骤截图</text>
+            <text class="req-text">提交体验过程截图和必要说明</text>
           </view>
           <view class="req-item">
             <text class="req-num">3</text>
-            <text class="req-text">确保实付金额填写正确</text>
+            <text class="req-text">确保填写信息真实有效</text>
           </view>
         </view>
       </view>
@@ -119,8 +119,8 @@
       <view class="notice">
         <text class="notice-title">注意事项</text>
         <text class="notice-text">1. 提交后进入审核流程</text>
-        <text class="notice-text">2. 请保留订单和实付款凭证</text>
-        <text class="notice-text">3. 审核通过后按流程返还本金</text>
+        <text class="notice-text">2. 请保留体验过程凭证</text>
+        <text class="notice-text">3. 审核通过后按规则进入积分兑换</text>
       </view>
     </view>
 
@@ -176,7 +176,7 @@ export default {
     },
 
     acceptStartTimeText() {
-      return this.task?.accept_start_time || this.task?.start_time || '立即可接单'
+      return this.task?.accept_start_time || this.task?.start_time || '立即可参与'
     },
 
     acceptNotStarted() {
@@ -234,16 +234,16 @@ export default {
 
     primaryActionText() {
       if (!this.isLoggedIn) return '去登录'
-      if (this.riskBlocked) return '当前禁止接单'
+      if (this.riskBlocked) return '暂不可参与'
       if (this.publishBlocked) return '仅查看详情'
-      if (!this.taskId) return '任务不存在'
+      if (!this.taskId) return '项目不存在'
       if (!this.submission) {
-        if (this.startedTaskDraftExists) return '继续任务'
-        if (this.acceptNotStarted) return '待接单'
-        return this.remainingQuota <= 0 ? '已无名额' : '开始任务'
+        if (this.startedTaskDraftExists) return '继续体验'
+        if (this.acceptNotStarted) return '待开放'
+        return this.remainingQuota <= 0 ? '已无名额' : '参与体验'
       }
       const status = Number(this.submission.review_status)
-      if (status === -1) return '继续任务'
+      if (status === -1) return '继续体验'
       if (status === 2) return '重新提交'
       if (status === 0) return '查看提交'
       if (status === 1) return '查看结果'
@@ -254,7 +254,7 @@ export default {
   onLoad(options) {
     this.taskId = options.id || options.taskId || ''
     if (!this.taskId) {
-      uni.showToast({ title: '任务参数缺失', icon: 'none' })
+      uni.showToast({ title: '项目参数缺失', icon: 'none' })
       return
     }
     this.loadPageData(true)
@@ -285,7 +285,7 @@ export default {
 
   onShareAppMessage() {
     return {
-      title: this.task.title ? `任务详情 - ${this.task.title}` : '任务详情',
+      title: this.task.title ? `项目详情 - ${this.task.title}` : '项目详情',
       path: `/pages/task-detail/index?id=${this.taskId}`
     }
   },
@@ -323,9 +323,9 @@ export default {
         const res = await getTaskDetail(this.taskId)
         this.task = res || {}
       } catch (error) {
-        console.error('加载任务详情失败', error)
-        this.loadError = '任务详情加载失败，请重试'
-        uni.showToast({ title: '加载任务失败', icon: 'none' })
+        console.error('加载项目详情失败', error)
+        this.loadError = '项目详情加载失败，请重试'
+        uni.showToast({ title: '加载项目失败', icon: 'none' })
       }
     },
 
@@ -368,28 +368,28 @@ export default {
 
     handlePrimaryAction() {
       if (!this.isLoggedIn) {
-        uni.showToast({ title: '请先登录后再接单', icon: 'none' })
+        uni.showToast({ title: '请先登录后再参与', icon: 'none' })
         uni.switchTab({ url: '/pages/my/index' })
         return
       }
 
       if (this.riskBlocked) {
-        uni.showToast({ title: this.riskReason || '当前账号已被标记，禁止接单', icon: 'none' })
+        uni.showToast({ title: this.riskReason || '当前账号已被标记，暂不可参与', icon: 'none' })
         return
       }
 
       if (this.publishBlocked) {
-        uni.showToast({ title: '发单账号仅可查看任务详情', icon: 'none' })
+        uni.showToast({ title: '发布账号仅可查看项目详情', icon: 'none' })
         return
       }
 
       if (!this.submission && this.remainingQuota <= 0) {
-        uni.showToast({ title: '当前任务已无名额', icon: 'none' })
+        uni.showToast({ title: '当前项目已无名额', icon: 'none' })
         return
       }
 
       if (!this.submission && this.acceptNotStarted) {
-        uni.showToast({ title: '当前任务暂未到可接单时间', icon: 'none' })
+        uni.showToast({ title: '当前项目暂未到可参与时间', icon: 'none' })
         return
       }
 
@@ -444,7 +444,7 @@ export default {
           })
         })
         .catch((error) => {
-          uni.showToast({ title: error?.message || '任务暂时无法接单', icon: 'none' })
+          uni.showToast({ title: error?.message || '项目暂时无法参与', icon: 'none' })
         })
     },
 

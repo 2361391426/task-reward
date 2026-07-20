@@ -3,20 +3,20 @@
     <view class="hero card">
       <view class="hero-copy">
         <text class="eyebrow">提交审核</text>
-        <text class="hero-title">按步骤补齐截图并提交</text>
+        <text class="hero-title">按步骤补齐凭证并提交</text>
         <text class="hero-desc">草稿会自动保存，重新进入页面时会回显上次填写内容。</text>
       </view>
       <image class="hero-image" src="/static/images/empty-upload.png" mode="aspectFit" />
     </view>
 
     <view v-if="riskBlocked" class="risk-banner card">
-      <text class="risk-title">当前账号已被标记，禁止接单</text>
+      <text class="risk-title">当前账号已被标记，暂不可参与</text>
       <text class="risk-desc">{{ riskReason || '系统检测到异常身份关联，请联系后台处理。' }}</text>
     </view>
 
     <view v-if="claimReminderVisible" class="deadline-banner card">
-      <text class="deadline-title">请在 1 小时内提交截图</text>
-      <text class="deadline-desc">剩余时间：{{ claimCountdownText }}，超时后任务将自动释放，今日无法再次接单。</text>
+      <text class="deadline-title">请在 1 小时内提交凭证</text>
+      <text class="deadline-desc">剩余时间：{{ claimCountdownText }}，超时后名额将自动释放，今日无法再次参与。</text>
     </view>
 
     <view class="draft card">
@@ -35,7 +35,7 @@
         <view class="step-head">
           <view class="step-head-main">
             <text class="step-title">{{ step.name }}</text>
-            <text class="step-sub">请按要求上传对应截图</text>
+            <text class="step-sub">请按要求上传对应凭证</text>
           </view>
           <view class="step-head-side">
             <text class="step-count">{{ step.images.length }}/{{ step.count }}</text>
@@ -87,7 +87,7 @@
         class="input"
         type="text"
         inputmode="decimal"
-        placeholder="请输入实付款"
+        placeholder="请输入实际数值，如无可填0"
         v-model="paidAmount"
       />
     </view>
@@ -197,19 +197,19 @@ export default {
       const wechatValid = String(this.wechatId || '').trim().length > 0
       const phoneValid = /^1[3-9]\d{9}$/.test(String(this.phoneNumber || '').trim())
       const orderValid = String(this.orderNumber || '').trim().length > 0
-      const paidValid = Number(this.paidAmount) > 0
+      const paidValid = Number(this.paidAmount) >= 0
       return allImagesUploaded && wechatValid && phoneValid && orderValid && paidValid && !this.riskBlocked
     },
 
     validationMessage() {
       if (this.riskBlocked) {
-        return this.riskReason || '当前账号已被标记，禁止接单'
+        return this.riskReason || '当前账号已被标记，暂不可参与'
       }
 
       const missingStep = this.uploadSteps.find(step => step.images.length < step.count)
       if (missingStep) {
         const remain = missingStep.count - missingStep.images.length
-        return `${missingStep.name}还差${remain}张截图`
+        return `${missingStep.name}还差${remain}张凭证`
       }
 
       if (!String(this.wechatId || '').trim()) {
@@ -224,8 +224,8 @@ export default {
         return '请填写订单号'
       }
 
-      if (!(Number(this.paidAmount) > 0)) {
-        return '请填写正确的实付款'
+      if (!(Number(this.paidAmount) >= 0)) {
+        return '请填写正确的实际数值'
       }
 
       return ''
@@ -298,7 +298,7 @@ export default {
       try {
         const token = uni.getStorageSync('token')
         if (!token) {
-          uni.showToast({ title: '请先登录后再接单', icon: 'none' })
+          uni.showToast({ title: '请先登录后再参与', icon: 'none' })
           uni.switchTab({ url: '/pages/my/index' })
           return
         }
@@ -334,7 +334,7 @@ export default {
           return
         }
       } catch (error) {
-        console.error('加载任务上下文失败', error)
+        console.error('加载项目上下文失败', error)
       }
 
       this.taskPlatform = normalizePlatform(this.taskPlatform)
@@ -493,7 +493,7 @@ export default {
     async submitTask() {
       if (this.riskBlocked) {
         uni.showToast({
-          title: this.riskReason || '当前账号已被标记，禁止接单',
+          title: this.riskReason || '当前账号已被标记，暂不可参与',
           icon: 'none'
         })
         return
