@@ -14,14 +14,18 @@ jobs:
       - name: 调用任务生命周期接口
         env:
           SCF_API_BASE_URL: ${{ secrets.SCF_API_BASE_URL }}
+          JWT_SECRET: ${{ secrets.JWT_SECRET }}
           TASK_LIFECYCLE_SWEEP_SECRET: ${{ secrets.TASK_LIFECYCLE_SWEEP_SECRET }}
         run: |
           API_BASE="${SCF_API_BASE_URL:-https://1455441725-f1qvv2j2lt.ap-guangzhou.tencentscf.com/api}"
-          if [ -n "$TASK_LIFECYCLE_SWEEP_SECRET" ]; then
-            curl -fsS -X POST "$API_BASE/system/task-lifecycle" \
-              -H "Content-Type: application/json" \
-              -H "X-Cron-Secret: $TASK_LIFECYCLE_SWEEP_SECRET"
-          else
-            curl -fsS -X POST "$API_BASE/system/task-lifecycle" \
-              -H "Content-Type: application/json"
+          CRON_SECRET="$TASK_LIFECYCLE_SWEEP_SECRET"
+          if [ -z "$CRON_SECRET" ] && [ -n "$JWT_SECRET" ]; then
+            CRON_SECRET="$(printf '%s' "${JWT_SECRET}:task-lifecycle" | sha256sum | awk '{print $1}')"
           fi
+          if [ -z "$CRON_SECRET" ]; then
+            echo "缺少 TASK_LIFECYCLE_SWEEP_SECRET 或 JWT_SECRET，无法调用定时接口"
+            exit 1
+          fi
+          curl -fsS -X POST "$API_BASE/system/task-lifecycle" \
+            -H "Content-Type: application/json" \
+            -H "X-Cron-Secret: $CRON_SECRET"

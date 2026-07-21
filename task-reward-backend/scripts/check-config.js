@@ -33,7 +33,7 @@ if (!process.env.WECHAT_SECRET && !process.env.WECHAT_APPSECRET) {
 }
 
 if (isProduction && !process.env.TASK_LIFECYCLE_SWEEP_SECRET) {
-  missing.push('TASK_LIFECYCLE_SWEEP_SECRET')
+  console.warn('未配置 TASK_LIFECYCLE_SWEEP_SECRET，部署流程会使用 JWT_SECRET 派生调度密钥。')
 }
 
 if (process.env.WECHAT_APPID === 'touristappid' || process.env.WECHAT_APPID === 'your_wechat_appid') {
