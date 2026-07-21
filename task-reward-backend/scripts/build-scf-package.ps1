@@ -29,6 +29,18 @@ if (!(Test-Path -LiteralPath $esbuildBin)) {
 }
 
 $bundlePath = Join-Path $stageDir 'scf-server.js'
+$bannerContent = @'
+const __taskRewardCrypto = require("crypto");
+if (!__taskRewardCrypto.randomUUID) {
+  __taskRewardCrypto.randomUUID = function randomUUID() {
+    const bytes = __taskRewardCrypto.randomBytes(16);
+    bytes[6] = (bytes[6] & 0x0f) | 0x40;
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+    const hex = bytes.toString("hex");
+    return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+  };
+}
+'@
 & $esbuildBin `
     (Join-Path $backendRoot 'scf-server.js') `
     --bundle `
@@ -40,6 +52,9 @@ $bundlePath = Join-Path $stageDir 'scf-server.js'
 if ($LASTEXITCODE -ne 0) {
     throw "esbuild failed with exit code $LASTEXITCODE"
 }
+
+$bundleContent = [System.IO.File]::ReadAllText($bundlePath, [System.Text.Encoding]::UTF8)
+[System.IO.File]::WriteAllText($bundlePath, $bannerContent + "`n" + $bundleContent, [System.Text.Encoding]::UTF8)
 
 $bootstrapPath = Join-Path $stageDir 'scf_bootstrap'
 $bootstrapContent = @(
