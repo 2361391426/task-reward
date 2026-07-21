@@ -112,7 +112,7 @@ const createTaskWithNeon = async ({
       accept_start_time || null,
       end_time || null,
       operatorId,
-      `创建任务：${title}`,
+      `创建项目：${title}`,
       JSON.stringify(detail)
     ]
   );
@@ -149,7 +149,7 @@ module.exports = async (req, res) => {
   const merchantId = auth.merchant.id;
   const operatorId = getOperatorId(auth.merchant);
   if (!merchantRoleAllowed(auth.merchant, ['owner', 'operator', 'reviewer'])) {
-    return res.status(403).json(error(ErrorCodes.NO_PERMISSION, 'Permission denied'));
+    return res.status(403).json(error(ErrorCodes.NO_PERMISSION, '没有操作权限'));
   }
 
   if (req.method === 'GET') {
@@ -219,14 +219,14 @@ module.exports = async (req, res) => {
       }));
     } catch (err) {
       console.error('Get merchant tasks error:', err);
-      return res.status(500).json(error(500, 'Server error'));
+      return res.status(500).json(error(500, '服务器错误'));
     }
   }
 
   if (req.method === 'POST') {
     try {
       if (!merchantRoleAllowed(auth.merchant, ['owner', 'operator'])) {
-        return res.status(403).json(error(ErrorCodes.NO_PERMISSION, 'Permission denied'));
+        return res.status(403).json(error(ErrorCodes.NO_PERMISSION, '没有操作权限'));
       }
 
       const {
@@ -246,7 +246,7 @@ module.exports = async (req, res) => {
       } = req.body;
 
       if (!title || !reward_amount || !total_quota) {
-        return res.status(400).json(error(ErrorCodes.PARAM_ERROR, 'Missing required fields'));
+        return res.status(400).json(error(ErrorCodes.PARAM_ERROR, '缺少必填字段'));
       }
 
       const normalizedPlatform = normalizePlatform(platform);
@@ -254,7 +254,7 @@ module.exports = async (req, res) => {
       const parsedQuota = parseInt(total_quota, 10);
 
       if (Number.isNaN(parsedReward) || parsedReward <= 0 || Number.isNaN(parsedQuota) || parsedQuota <= 0) {
-        return res.status(400).json(error(ErrorCodes.PARAM_ERROR, 'Invalid amount or quota'));
+        return res.status(400).json(error(ErrorCodes.PARAM_ERROR, '奖励金额或名额不正确'));
       }
 
       const totalCost = parsedReward * parsedQuota;
@@ -328,7 +328,7 @@ module.exports = async (req, res) => {
           action: 'task_create',
           target_type: 'task',
           target_id: insertResult.insertId,
-          summary: `Create task: ${title}`,
+          summary: `创建项目：${title}`,
           detail: {
             platform: normalizedPlatform,
             reward_amount: parsedReward,
@@ -340,30 +340,30 @@ module.exports = async (req, res) => {
       });
 
       require('../../../lib/cache').clearByPrefix('tasks:list:');
-      return res.json(success(result, '任务已创建'));
+      return res.json(success(result, '项目已创建'));
     } catch (err) {
       console.error('Create task error:', err);
       if (err.message === 'insufficient_balance') {
-        return res.status(400).json(error(ErrorCodes.INSUFFICIENT_BALANCE, 'Insufficient balance'));
+        return res.status(400).json(error(ErrorCodes.INSUFFICIENT_BALANCE, '余额不足'));
       }
       if (err.message === 'merchant_not_found') {
-        return res.status(404).json(error(ErrorCodes.USER_NOT_FOUND, 'Merchant not found'));
+        return res.status(404).json(error(ErrorCodes.USER_NOT_FOUND, '商家不存在'));
       }
-      return res.status(500).json(error(500, 'Server error'));
+      return res.status(500).json(error(500, '服务器错误'));
     }
   }
 
   if (req.method === 'PATCH' || req.method === 'PUT') {
     try {
       if (!merchantRoleAllowed(auth.merchant, ['owner', 'operator'])) {
-        return res.status(403).json(error(ErrorCodes.NO_PERMISSION, 'Permission denied'));
+        return res.status(403).json(error(ErrorCodes.NO_PERMISSION, '没有操作权限'));
       }
 
       const taskId = req.body.id ?? req.body.task_id ?? req.query.id;
       const nextStatus = normalizeStatus(req.body.status ?? req.body.task_status);
 
       if (!taskId) {
-        return res.status(400).json(error(ErrorCodes.PARAM_ERROR, 'Missing task id'));
+        return res.status(400).json(error(ErrorCodes.PARAM_ERROR, '缺少项目 ID'));
       }
 
       const editableKeys = [
@@ -382,7 +382,7 @@ module.exports = async (req, res) => {
 
       const hasEditableFields = editableKeys.some(key => Object.prototype.hasOwnProperty.call(req.body, key));
       if (!hasEditableFields && nextStatus === null) {
-        return res.status(400).json(error(ErrorCodes.PARAM_ERROR, 'No changes provided'));
+        return res.status(400).json(error(ErrorCodes.PARAM_ERROR, '没有可保存的修改'));
       }
 
       const result = await db.transaction(async (connection) => {
@@ -479,7 +479,7 @@ module.exports = async (req, res) => {
               action: 'task_update',
               target_type: 'task',
               target_id: parseInt(taskId, 10),
-              summary: `Update task: ${taskId}`,
+              summary: `更新项目：${taskId}`,
               detail: updatePayload
             });
           }
@@ -507,7 +507,7 @@ module.exports = async (req, res) => {
               action: 'task_status_change',
               target_type: 'task',
               target_id: parseInt(taskId, 10),
-              summary: `Task status changed to ${nextStatus}`,
+              summary: `项目状态调整为 ${nextStatus}`,
               detail: { status: nextStatus, refund_amount: refundAmount }
             });
           }
@@ -517,21 +517,21 @@ module.exports = async (req, res) => {
       });
 
       require('../../../lib/cache').clearByPrefix('tasks:list:');
-      return res.json(success(result, hasEditableFields ? 'Task updated' : 'Task status updated'));
+      return res.json(success(result, hasEditableFields ? '项目已更新' : '项目状态已更新'));
     } catch (err) {
       console.error('Update task error:', err);
       if (err.message === 'task_not_found') {
-        return res.status(404).json(error(ErrorCodes.TASK_NOT_FOUND, 'Task not found'));
+        return res.status(404).json(error(ErrorCodes.TASK_NOT_FOUND, '项目不存在'));
       }
       if (err.message === 'permission_denied') {
-        return res.status(403).json(error(ErrorCodes.NO_PERMISSION, 'Permission denied'));
+        return res.status(403).json(error(ErrorCodes.NO_PERMISSION, '没有操作权限'));
       }
       if (err.message === 'task_closed') {
-        return res.status(400).json(error(ErrorCodes.REVIEW_FAILED, 'Closed task cannot be changed'));
+        return res.status(400).json(error(ErrorCodes.REVIEW_FAILED, '已关闭项目不能修改'));
       }
-      return res.status(500).json(error(500, 'Server error'));
+      return res.status(500).json(error(500, '服务器错误'));
     }
   }
 
-  return res.status(405).json(error(405, 'Method not allowed'));
+  return res.status(405).json(error(405, '请求方法不支持'));
 };

@@ -1,9 +1,15 @@
 {
+  "easycom": {
+    "autoscan": true,
+    "custom": {
+      "^uni-(.*)": "@dcloudio/uni-ui/lib/uni-$1/uni-$1.vue"
+    }
+  },
   "pages": [
     {
       "path": "pages/index/index",
       "style": {
-        "navigationBarTitleText": "任务大厅",
+        "navigationBarTitleText": "体验项目",
         "enablePullDownRefresh": true,
         "backgroundTextStyle": "dark"
       }
@@ -11,37 +17,87 @@
     {
       "path": "pages/task-detail/index",
       "style": {
-        "navigationBarTitleText": "任务详情"
+        "navigationBarTitleText": "项目详情",
+        "enablePullDownRefresh": true,
+        "backgroundTextStyle": "dark"
       }
     },
     {
       "path": "pages/upload/index",
       "style": {
-        "navigationBarTitleText": "上传截图"
+        "navigationBarTitleText": "提交凭证",
+        "enablePullDownRefresh": true,
+        "backgroundTextStyle": "dark"
       }
     },
     {
       "path": "pages/my/index",
       "style": {
-        "navigationBarTitleText": "我的"
+        "navigationBarTitleText": "我的",
+        "enablePullDownRefresh": true,
+        "backgroundTextStyle": "dark"
+      }
+    },
+    {
+      "path": "pages/profile/edit/index",
+      "style": {
+        "navigationBarTitleText": "编辑个人信息",
+        "enablePullDownRefresh": false,
+        "backgroundTextStyle": "dark"
       }
     },
     {
       "path": "pages/withdraw/index",
       "style": {
-        "navigationBarTitleText": "提现"
+        "navigationBarTitleText": "积分兑换",
+        "enablePullDownRefresh": true,
+        "backgroundTextStyle": "dark"
       }
     },
     {
       "path": "pages/submission-detail/index",
       "style": {
-        "navigationBarTitleText": "提交详情"
+        "navigationBarTitleText": "提交详情",
+        "enablePullDownRefresh": true,
+        "backgroundTextStyle": "dark"
+      }
+    },
+    {
+      "path": "pages/feedback/index",
+      "style": {
+        "navigationBarTitleText": "意见反馈",
+        "enablePullDownRefresh": true,
+        "backgroundTextStyle": "dark"
+      }
+    },
+    {
+      "path": "pages/agreement/index",
+      "style": {
+        "navigationBarTitleText": "用户协议",
+        "enablePullDownRefresh": false,
+        "backgroundTextStyle": "dark"
+      }
+    },
+    {
+      "path": "pages/privacy/index",
+      "style": {
+        "navigationBarTitleText": "隐私条款",
+        "enablePullDownRefresh": false,
+        "backgroundTextStyle": "dark"
+      }
+    },
+    {
+      "path": "pages/orders/index",
+      "style": {
+        "navigationBarTitleText": "我的参与",
+        "enablePullDownRefresh": true,
+        "backgroundTextStyle": "dark"
       }
     }
   ],
   "globalStyle": {
     "navigationBarTextStyle": "black",
-    "navigationBarTitleText": "任务返现",
+    "navigationBarTitleText": "诺斯马丁",
     "navigationBarBackgroundColor": "#F8F8F8",
     "backgroundColor": "#F8F8F8"
   },
@@ -55,7 +111,7 @@
         "pagePath": "pages/index/index",
         "iconPath": "static/tabbar/task.png",
         "selectedIconPath": "static/tabbar/task-active.png",
-        "text": "任务"
+        "text": "项目"
       },
       {
         "pagePath": "pages/my/index",

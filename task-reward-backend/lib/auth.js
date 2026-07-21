@@ -1,77 +1,77 @@
-const jwt = require('jsonwebtoken');
-const db = require('./db');
+const jwt = require('jsonwebtoken')
+const db = require('./db')
 
-const DEV_JWT_SECRET = 'dev-only-secret-change-before-production';
+const DEV_JWT_SECRET = 'dev-only-secret-change-before-production'
 const isProduction = ['production', 'prod'].includes((process.env.NODE_ENV || '').toLowerCase()) ||
-  process.env.VERCEL_ENV === 'production';
+  process.env.VERCEL_ENV === 'production'
 
 function getJwtSecret() {
   if (process.env.JWT_SECRET) {
-    return process.env.JWT_SECRET;
+    return process.env.JWT_SECRET
   }
 
   if (isProduction) {
-    throw new Error('JWT_SECRET must be set in production');
+    throw new Error('生产环境必须配置 JWT_SECRET')
   }
 
   if (!getJwtSecret.warned) {
-    console.warn('[auth] JWT_SECRET is not set. Using a development fallback secret.');
-    getJwtSecret.warned = true;
+    console.warn('[auth] JWT_SECRET 未配置，当前使用本地开发兜底密钥。')
+    getJwtSecret.warned = true
   }
 
-  return DEV_JWT_SECRET;
+  return DEV_JWT_SECRET
 }
 
 function generateToken(payload, expiresIn = '7d') {
-  return jwt.sign(payload, getJwtSecret(), { expiresIn });
+  return jwt.sign(payload, getJwtSecret(), { expiresIn })
 }
 
 function verifyToken(token) {
   try {
-    return jwt.verify(token, getJwtSecret());
+    return jwt.verify(token, getJwtSecret())
   } catch (error) {
-    return null;
+    return null
   }
 }
 
 async function authenticateUser(req) {
-  const authHeader = req.headers.authorization;
+  const authHeader = req.headers.authorization
 
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    return { error: { code: 1002, message: 'Not logged in' }, status: 401 };
+    return { error: { code: 1002, message: '请先登录' }, status: 401 }
   }
 
-  const token = authHeader.replace('Bearer ', '');
-  const decoded = verifyToken(token);
+  const token = authHeader.replace('Bearer ', '')
+  const decoded = verifyToken(token)
 
   if (!decoded || decoded.type !== 'user') {
-    return { error: { code: 1002, message: 'Token invalid or expired' }, status: 401 };
+    return { error: { code: 1002, message: '登录已失效，请重新登录' }, status: 401 }
   }
 
   const user = await db.queryOne(
     'SELECT * FROM users WHERE id = ? AND status = 1',
     [decoded.user_id]
-  );
+  )
 
   if (!user) {
-    return { error: { code: 2001, message: 'User not found or disabled' }, status: 401 };
+    return { error: { code: 2001, message: '用户不存在或已停用' }, status: 401 }
   }
 
-  return { user };
+  return { user }
 }
 
 async function authenticateMerchant(req) {
-  const authHeader = req.headers.authorization;
+  const authHeader = req.headers.authorization
 
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    return { error: { code: 1002, message: 'Not logged in' }, status: 401 };
+    return { error: { code: 1002, message: '请先登录' }, status: 401 }
   }
 
-  const token = authHeader.replace('Bearer ', '');
-  const decoded = verifyToken(token);
+  const token = authHeader.replace('Bearer ', '')
+  const decoded = verifyToken(token)
 
   if (!decoded || !['merchant', 'merchant_staff'].includes(decoded.type)) {
-    return { error: { code: 1002, message: 'Token invalid or expired' }, status: 401 };
+    return { error: { code: 1002, message: '登录已失效，请重新登录' }, status: 401 }
   }
 
   if (decoded.type === 'merchant_staff') {
@@ -81,10 +81,10 @@ async function authenticateMerchant(req) {
        JOIN merchants m ON m.id = s.merchant_id
        WHERE s.id = ? AND s.status = 1 AND m.status = 1`,
       [decoded.user_id]
-    );
+    )
 
     if (!staff) {
-      return { error: { code: 2001, message: 'Merchant account not found or disabled' }, status: 401 };
+      return { error: { code: 2001, message: '商家员工账号不存在或已停用' }, status: 401 }
     }
 
     return {
@@ -99,16 +99,16 @@ async function authenticateMerchant(req) {
         role: staff.role || 'operator',
         account_type: 'merchant_staff'
       }
-    };
+    }
   }
 
   const merchant = await db.queryOne(
     'SELECT * FROM merchants WHERE id = ? AND status = 1',
     [decoded.user_id]
-  );
+  )
 
   if (!merchant) {
-    return { error: { code: 2001, message: 'Merchant not found or disabled' }, status: 401 };
+    return { error: { code: 2001, message: '商家账号不存在或已停用' }, status: 401 }
   }
 
   return {
@@ -119,14 +119,14 @@ async function authenticateMerchant(req) {
       role: 'owner',
       account_type: 'merchant'
     }
-  };
+  }
 }
 
 function merchantRoleAllowed(merchant, roles = []) {
-  if (!merchant) return false;
-  if (merchant.account_type === 'merchant') return true;
-  if (!Array.isArray(roles) || roles.length === 0) return true;
-  return roles.includes(merchant.role);
+  if (!merchant) return false
+  if (merchant.account_type === 'merchant') return true
+  if (!Array.isArray(roles) || roles.length === 0) return true
+  return roles.includes(merchant.role)
 }
 
 module.exports = {
@@ -135,4 +135,4 @@ module.exports = {
   authenticateUser,
   authenticateMerchant,
   merchantRoleAllowed
-};
+}

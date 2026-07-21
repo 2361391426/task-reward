@@ -14,7 +14,7 @@ module.exports = async (req, res) => {
   }
 
   if (req.method !== 'POST') {
-    return res.status(405).json(error(405, 'Method not allowed'))
+    return res.status(405).json(error(405, '请求方法不支持'))
   }
 
   try {
@@ -26,7 +26,7 @@ module.exports = async (req, res) => {
     const merchantId = auth.merchant.id
     const operatorId = auth.merchant.staff_id || auth.merchant.id
     if (!merchantRoleAllowed(auth.merchant, ['owner', 'reviewer'])) {
-      return res.status(403).json(error(ErrorCodes.NO_PERMISSION, '无权限操作'))
+      return res.status(403).json(error(ErrorCodes.NO_PERMISSION, '没有审核权限'))
     }
 
     const id = req.query.id ?? req.body.id ?? req.body.submission_id
@@ -49,7 +49,7 @@ module.exports = async (req, res) => {
 
     await db.transaction(async (connection) => {
       const [rows] = await connection.query(
-        `SELECT s.*, t.merchant_id
+        `SELECT s.*, t.merchant_id, t.title AS task_title
          FROM submissions s
          JOIN tasks t ON s.task_id = t.id
          WHERE s.id = ? FOR UPDATE`,
@@ -110,7 +110,7 @@ module.exports = async (req, res) => {
           `INSERT INTO earnings
            (user_id, submission_id, type, amount, balance_after, description, created_at)
            VALUES (?, ?, 1, ?, ?, ?, NOW())`,
-          [submission.user_id, id, rewardAmount, balanceAfter, `任务返现 - ${submission.task_id}`]
+          [submission.user_id, id, rewardAmount, balanceAfter, `体验奖励 - ${submission.task_id}`]
         )
       } else {
         await connection.query(
@@ -141,7 +141,7 @@ module.exports = async (req, res) => {
 
       reviewPayload = {
         userId: submission.user_id,
-        taskTitle: submission.task_title || `任务 ${submission.task_id}`,
+        taskTitle: submission.task_title || `项目 ${submission.task_id}`,
         reviewStatus,
         rejectReason,
         rewardAmount: submission.reward_amount

@@ -127,7 +127,7 @@ export default {
       loadError: '',
       autoRefreshTimer: null,
       autoRefreshing: false,
-      autoRefreshIntervalMs: 12000
+      autoRefreshIntervalMs: 60000
     }
   },
 
@@ -439,12 +439,16 @@ export default {
     },
 
     async refreshTasksSilently() {
-      if (this.autoRefreshing || this.loading || this.loadingMore) {
+      if (this.autoRefreshing || this.loading || this.loadingMore || this.loadError) {
         return
       }
       this.autoRefreshing = true
       try {
-        await this.refreshData(true, { silent: true })
+        const taskLoaded = await this.loadTasks(true, { silent: true })
+        if (taskLoaded && this.isLoggedIn()) {
+          const visibleTaskIds = this.taskList.map(task => String(task.id)).filter(Boolean)
+          await this.loadMySubmissions(true, visibleTaskIds)
+        }
       } finally {
         this.autoRefreshing = false
       }

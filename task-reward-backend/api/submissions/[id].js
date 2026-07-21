@@ -60,14 +60,14 @@ const pickField = (primary, fallback) => {
 module.exports = async (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*')
   res.setHeader('Access-Control-Allow-Methods', 'GET, PUT, OPTIONS')
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization')
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Device-Id')
 
   if (req.method === 'OPTIONS') {
     return res.status(200).end()
   }
 
   if (!['GET', 'PUT'].includes(req.method)) {
-    return res.status(405).json(error(405, 'Method not allowed'))
+    return res.status(405).json(error(405, '请求方法不支持'))
   }
 
   try {
@@ -131,7 +131,7 @@ module.exports = async (req, res) => {
       [userId]
     )
     if (risk && parsePositiveInt(risk.status, 0) === 1) {
-      return res.status(403).json(error(ErrorCodes.NO_PERMISSION, '当前账号已被标记，禁止重新提交'))
+      return res.status(403).json(error(ErrorCodes.NO_PERMISSION, '当前账号已被标记，暂不可重新提交'))
     }
 
     const result = await db.transaction(async (connection) => {
@@ -170,6 +170,7 @@ module.exports = async (req, res) => {
       const nextPaidAmount = parseFloat(
         pickField(req.body.paid_amount, submission.paid_amount || 0)
       )
+      const nextAddressText = pickField(req.body.address_text || req.body.address, submission.address_text || '')
       const nextScreens = {
         screenshot_search: pickField(req.body.screenshot_search, submission.screenshot_search),
         screenshot_shop_1: pickField(req.body.screenshot_shop_1, submission.screenshot_shop_1),
@@ -252,6 +253,7 @@ module.exports = async (req, res) => {
           nextScreens.screenshot_detail,
           nextScreens.screenshot_cart,
           nextScreens.screenshot_paid_order,
+          nextAddressText || null,
           nextAcceptedAt,
           nextExpiresAt,
           id
@@ -281,7 +283,7 @@ module.exports = async (req, res) => {
       return res.status(400).json(error(ErrorCodes.PARAM_ERROR, '当前状态不允许重新提交'))
     }
     if (err.message === 'draft_expired') {
-      return res.status(403).json(error(ErrorCodes.NO_PERMISSION, '任务已超时释放，请重新接单'))
+      return res.status(403).json(error(ErrorCodes.NO_PERMISSION, '项目已超时释放，请重新开始'))
     }
     if (err.message === 'missing_fields') {
       return res.status(400).json(error(ErrorCodes.PARAM_ERROR, '缺少必要字段'))

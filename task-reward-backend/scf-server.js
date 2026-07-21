@@ -7,7 +7,7 @@ require('dotenv').config({
     : path.join(__dirname, '.env')
 })
 
-const app = require('./runtime/app')
+const app = require('./app')
 
 const port = Number(process.env.PORT || 9000)
 

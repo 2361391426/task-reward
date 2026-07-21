@@ -26,6 +26,17 @@
           立即登录
         </button>
       </view>
+      <view class="agreement-row" @click="toggleAgreement">
+        <view class="agreement-check" :class="{ checked: agreeChecked }">
+          <text v-if="agreeChecked">✓</text>
+        </view>
+        <view class="agreement-text">
+          <text>我已阅读并同意</text>
+          <text class="agreement-link" @click.stop="openAgreement('agreement')">《用户协议》</text>
+          <text>与</text>
+          <text class="agreement-link" @click.stop="openAgreement('privacy')">《隐私条款》</text>
+        </view>
+      </view>
     </view>
 
     <view v-else-if="!userInfo.phone" class="panel card login-panel">
@@ -1013,6 +1024,11 @@ export default {
     },
 
     async handleQuickLogin() {
+      if (!this.agreeChecked) {
+        uni.showToast({ title: '请先阅读并同意用户协议与隐私条款', icon: 'none' })
+        return
+      }
+
       try {
         this.quickLoginLoading = true
         const loginProfile = this.getCachedLoginProfile()
@@ -1243,6 +1259,15 @@ export default {
       uni.navigateTo({
         url: '/pages/feedback/index'
       })
+    },
+
+    toggleAgreement() {
+      this.agreeChecked = !this.agreeChecked
+    },
+
+    openAgreement(type) {
+      const url = type === 'privacy' ? '/pages/privacy/index' : '/pages/agreement/index'
+      uni.navigateTo({ url })
     },
 
     openHelp() {
@@ -1778,6 +1803,11 @@ export default {
   font-size: 24rpx;
   line-height: 1.5;
   color: #475569;
+}
+
+.agreement-link {
+  color: #b21e35;
+  font-weight: 700;
 }
 
 .user-card {

@@ -60,6 +60,13 @@ module.exports = async (req, res) => {
         AND s.expires_at > NOW()
     )`
 
+    const countRow = await db.queryOne(
+      `SELECT COUNT(*) AS total
+       FROM tasks
+       ${whereClause}`,
+      params
+    )
+
     const tasks = await db.query(
       `SELECT id, platform, title, description, reward_amount, total_quota, remaining_quota,
               product_name, start_time, accept_start_time, end_time, status, created_at
@@ -71,7 +78,7 @@ module.exports = async (req, res) => {
     )
 
     const payload = {
-      total: tasks.length,
+      total: Number(countRow?.total || 0),
       page: currentPage,
       page_size: pageSize,
       list: tasks.map((task) => Object.assign(

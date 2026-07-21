@@ -19,6 +19,15 @@ const addMonths = (value, months) => {
   return next
 }
 
+const isSameDay = (a, b = new Date()) => {
+  const left = a ? new Date(a) : null
+  const right = b instanceof Date ? b : new Date(b)
+  if (!left || Number.isNaN(left.getTime()) || Number.isNaN(right.getTime())) return false
+  return left.getFullYear() === right.getFullYear()
+    && left.getMonth() === right.getMonth()
+    && left.getDate() === right.getDate()
+}
+
 const isSocialPlatform = (platform) => ['douyin', 'xiaohongshu'].includes(platform)
 
 const parseTags = (value) => {
@@ -169,7 +178,7 @@ module.exports = async (req, res) => {
   }
 
   if (req.method !== 'POST') {
-    return res.status(405).json(error(405, 'Method not allowed'))
+    return res.status(405).json(error(405, '请求方法不支持'))
   }
 
   try {
@@ -260,11 +269,44 @@ module.exports = async (req, res) => {
         return { error: 'task_ended' }
       }
 
-      const [existingRows] = await connection.query(
-        'SELECT id FROM submissions WHERE task_id = ? AND user_id = ? FOR UPDATE',
+      await connection.query(
+        `UPDATE submissions
+         SET review_status = -4,
+             status = -4,
+             release_reason = '项目超时自动释放',
+             released_at = NOW(),
+             review_note = '项目超时自动释放',
+             updated_at = NOW()
+         WHERE task_id = ?
+           AND user_id = ?
+           AND review_status = -1
+           AND expires_at IS NOT NULL
+           AND expires_at <= NOW()`,
         [task_id, userId]
       )
-      if (existingRows.length > 0) {
+
+      const [existingRows] = await connection.query(
+        `SELECT id, review_status, expires_at, released_at
+         FROM submissions
+         WHERE task_id = ? AND user_id = ?
+         ORDER BY created_at DESC
+         LIMIT 1 FOR UPDATE`,
+        [task_id, userId]
+      )
+      const existingSubmission = existingRows[0] || null
+      if (!existingSubmission) {
+        return { error: 'no_active_claim' }
+      }
+
+      const existingStatus = parsePositiveInt(existingSubmission.review_status, 0)
+      if (existingStatus === -4 && existingSubmission.released_at && isSameDay(existingSubmission.released_at, now)) {
+        return { error: 'task_cooldown' }
+      }
+      if (
+        existingStatus !== -1 ||
+        !existingSubmission.expires_at ||
+        new Date(existingSubmission.expires_at) <= now
+      ) {
         return { error: 'already_submitted' }
       }
 
@@ -307,10 +349,13 @@ module.exports = async (req, res) => {
       const [cooldownRows] = await connection.query(
         `SELECT id, created_at
          FROM submissions
-         WHERE user_id = ? AND platform = ?
+         WHERE user_id = ?
+           AND platform = ?
+           AND id <> ?
+           AND review_status IN (0, 1, 2)
          ORDER BY created_at DESC
          LIMIT 1 FOR UPDATE`,
-        [userId, task.platform]
+        [userId, task.platform, existingSubmission.id]
       )
 
       const lastSubmission = cooldownRows[0]
@@ -333,15 +378,31 @@ module.exports = async (req, res) => {
       }
 
       const encryptedPhone = encrypt(phone_number)
-      const [insertResult] = await connection.query(
-        `INSERT INTO submissions
-         (task_id, user_id, platform, paid_amount, wechat_id, phone_number, order_number, screenshot_search, screenshot_shop_1,
-          screenshot_shop_2, screenshot_shop_3, screenshot_follow, screenshot_share,
-          screenshot_detail, screenshot_cart, screenshot_paid_order, address_text, reward_amount, status, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NOW(), NOW())`,
+      await connection.query(
+        `UPDATE submissions
+         SET platform = ?,
+             paid_amount = ?,
+             wechat_id = ?,
+             phone_number = ?,
+             order_number = ?,
+             screenshot_search = ?,
+             screenshot_shop_1 = ?,
+             screenshot_shop_2 = ?,
+             screenshot_shop_3 = ?,
+             screenshot_follow = ?,
+             screenshot_share = ?,
+             screenshot_detail = ?,
+             screenshot_cart = ?,
+             screenshot_paid_order = ?,
+             address_text = ?,
+             reward_amount = ?,
+             review_status = 0,
+             status = 0,
+             review_note = '',
+             submit_time = NOW(),
+             updated_at = NOW()
+         WHERE id = ?`,
         [
-          task_id,
-          userId,
           task.platform,
           actualPaidAmount,
           wechat_id,
@@ -357,7 +418,8 @@ module.exports = async (req, res) => {
           screenshot_cart,
           screenshot_paid_order,
           address_text || address || null,
-          task.reward_amount
+          task.reward_amount,
+          existingSubmission.id
         ]
       )
 
@@ -373,21 +435,21 @@ module.exports = async (req, res) => {
         connection,
         userId,
         task.platform,
-        insertResult.insertId,
+        existingSubmission.id,
         now.toISOString(),
         cooldownUntil,
         buildCooldownReason(task.platform, cooldownUntil)
       )
 
-      return { submission_id: insertResult.insertId }
+      return { submission_id: existingSubmission.id }
     })
 
     if (result && result.error) {
       if (result.error === 'task_not_found') {
-        return res.status(404).json(error(ErrorCodes.TASK_NOT_FOUND, '任务不存在'))
+        return res.status(404).json(error(ErrorCodes.TASK_NOT_FOUND, '项目不存在'))
       }
       if (result.error === 'task_closed' || result.error === 'task_not_started' || result.error === 'task_ended') {
-        return res.status(400).json(error(ErrorCodes.TASK_ENDED, '任务已结束'))
+        return res.status(400).json(error(ErrorCodes.TASK_ENDED, '项目暂不可参与'))
       }
       if (result.error === 'quota_full') {
         return res.status(400).json(error(ErrorCodes.QUOTA_FULL, '名额已满'))
@@ -396,16 +458,22 @@ module.exports = async (req, res) => {
         return res.status(400).json(error(ErrorCodes.PARAM_ERROR, '关注/分享截图为该平台必填'))
       }
       if (result.error === 'already_submitted') {
-        return res.status(400).json(error(ErrorCodes.ALREADY_SUBMITTED, '已提交过该任务'))
+        return res.status(400).json(error(ErrorCodes.ALREADY_SUBMITTED, '已提交过该项目'))
+      }
+      if (result.error === 'no_active_claim') {
+        return res.status(409).json(error(ErrorCodes.NO_PERMISSION, '请先开始项目后再提交审核'))
+      }
+      if (result.error === 'task_cooldown') {
+        return res.status(403).json(error(ErrorCodes.NO_PERMISSION, '该项目今天已释放，今日不能再次参与'))
       }
       if (result.error === 'platform_cooldown') {
-        return res.status(403).json(error(ErrorCodes.NO_PERMISSION, '该平台三个月内只能接一次单'))
+        return res.status(403).json(error(ErrorCodes.NO_PERMISSION, '该平台三个月内已有参与记录'))
       }
       if (result.error === 'identity_conflict') {
-        return res.status(403).json(error(ErrorCodes.NO_PERMISSION, '检测到统一用户，已禁止接单'))
+        return res.status(403).json(error(ErrorCodes.NO_PERMISSION, '检测到统一用户，暂不可参与'))
       }
       if (result.error === 'user_blocked') {
-        return res.status(403).json(error(ErrorCodes.NO_PERMISSION, '当前账号已被标记，禁止接单'))
+        return res.status(403).json(error(ErrorCodes.NO_PERMISSION, '当前账号已被标记，暂不可参与'))
       }
     }
 

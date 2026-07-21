@@ -136,7 +136,7 @@ module.exports = async (req, res) => {
   }
 
   if (!['GET', 'PATCH'].includes(req.method)) {
-    return res.status(405).json(error(405, 'Method not allowed'))
+    return res.status(405).json(error(405, '请求方法不支持'))
   }
 
   try {
@@ -234,6 +234,6 @@ module.exports = async (req, res) => {
     }))
   } catch (err) {
     console.error('Risk users error:', err)
-    return res.status(500).json(error(500, 'Server error'))
+    return res.status(500).json(error(500, '服务器错误'))
   }
 }

@@ -30,7 +30,7 @@ module.exports = async (req, res) => {
     }
 
     if (!merchantRoleAllowed(auth.merchant, ['owner', 'finance'])) {
-      return res.status(403).json(error(ErrorCodes.NO_PERMISSION, 'Permission denied'));
+      return res.status(403).json(error(ErrorCodes.NO_PERMISSION, '没有操作权限'));
     }
 
     if (req.method === 'GET') {
@@ -81,7 +81,7 @@ module.exports = async (req, res) => {
       const transactionNo = ensureTransactionNo(req.body.transaction_no);
 
       if (Number.isNaN(amount) || amount <= 0) {
-        return res.status(400).json(error(ErrorCodes.PARAM_ERROR, 'Invalid recharge amount'));
+        return res.status(400).json(error(ErrorCodes.PARAM_ERROR, '充值金额不正确'));
       }
 
       const result = await db.transaction(async (connection) => {
@@ -137,12 +137,12 @@ module.exports = async (req, res) => {
       return res.json(success(result, 'Recharge created'));
     }
 
-    return res.status(405).json(error(405, 'Method not allowed'));
+    return res.status(405).json(error(405, '请求方法不支持'));
   } catch (err) {
     console.error('Merchant recharges error:', err);
     if (err.message === 'merchant_not_found') {
-      return res.status(404).json(error(ErrorCodes.USER_NOT_FOUND, 'Merchant not found'));
+      return res.status(404).json(error(ErrorCodes.USER_NOT_FOUND, '商家不存在'));
     }
-    return res.status(500).json(error(500, 'Server error'));
+    return res.status(500).json(error(500, '服务器错误'));
   }
 };

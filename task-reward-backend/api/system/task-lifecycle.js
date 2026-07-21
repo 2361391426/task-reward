@@ -2,6 +2,8 @@ const db = require('../../lib/db')
 const { success, error } = require('../../lib/response')
 const { sweepTaskLifecycle } = require('../../lib/task-lifecycle')
 
+const isLocalCronAllowed = () => process.env.ALLOW_UNAUTHENTICATED_CRON === 'true'
+
 module.exports = async (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*')
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS')
@@ -12,16 +14,16 @@ module.exports = async (req, res) => {
   }
 
   if (req.method !== 'POST') {
-    return res.status(405).json(error(405, 'Method not allowed'))
+    return res.status(405).json(error(405, '请求方法不支持'))
   }
 
   const configuredSecret = process.env.TASK_LIFECYCLE_SWEEP_SECRET
   const requestSecret = req.headers['x-cron-secret'] || req.query.secret || req.body?.secret
-  if (configuredSecret && requestSecret !== configuredSecret) {
-    return res.status(403).json(error(403, 'Forbidden'))
+  if (!configuredSecret && !isLocalCronAllowed()) {
+    return res.status(403).json(error(403, '系统调度密钥未配置'))
   }
-  if (!configuredSecret && ['production', 'prod'].includes(String(process.env.NODE_ENV || '').toLowerCase())) {
-    return res.status(403).json(error(403, 'Cron secret not configured'))
+  if (configuredSecret && requestSecret !== configuredSecret) {
+    return res.status(403).json(error(403, '系统调度密钥不正确'))
   }
 
   try {
@@ -32,7 +34,7 @@ module.exports = async (req, res) => {
     return res.json(success({
       expired_count: Number(result?.expiredCount || 0),
       released_count: Number(result?.releasedCount || 0)
-    }, '任务状态已同步'))
+    }, '项目状态已同步'))
   } catch (err) {
     console.error('Task lifecycle sweep failed:', err)
     return res.status(500).json(error(500, '服务器错误'))

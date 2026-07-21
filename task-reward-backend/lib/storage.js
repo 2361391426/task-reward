@@ -179,11 +179,20 @@ const putR2Object = async ({ fileBuffer, key, mimetype, config }) => {
   })
 }
 
-async function uploadFile(fileBuffer, originalFilename, mimetype) {
+const normalizePurpose = (purpose) => {
+  const value = String(purpose || 'submission').trim().toLowerCase()
+  if (['avatar', 'feedback', 'merchant', 'submission'].includes(value)) {
+    return value
+  }
+  return 'submission'
+}
+
+async function uploadFile(fileBuffer, originalFilename, mimetype, options = {}) {
   const ext = path.extname(originalFilename || '') || '.jpg'
   const filename = `${createUploadId()}${ext}`
   const date = new Date().toISOString().split('T')[0]
-  const key = `uploads/${date}/${filename}`
+  const purpose = normalizePurpose(options.purpose)
+  const key = `uploads/${purpose}/${date}/${filename}`
   const r2Config = getR2Config()
 
   if (r2Config) {

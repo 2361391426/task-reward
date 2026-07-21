@@ -104,7 +104,7 @@ module.exports = async (req, res) => {
   }
 
   if (req.method !== 'GET' && req.method !== 'PUT') {
-    return res.status(405).json(error(405, '不支持的请求方法'))
+    return res.status(405).json(error(405, '请求方法不支持'))
   }
 
   try {
@@ -132,7 +132,7 @@ module.exports = async (req, res) => {
 
       if (phoneInput) {
         if (!isValidPhone(phoneInput)) {
-          return res.status(400).json(error(1001, '请输入正确的11位手机号'))
+          return res.status(400).json(error(1001, '请输入正确的 11 位手机号'))
         }
         updates.push('phone = ?')
         params.push(encrypt(phoneInput))

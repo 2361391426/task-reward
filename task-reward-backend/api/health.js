@@ -11,7 +11,7 @@ module.exports = async (req, res) => {
   }
 
   if (req.method !== 'GET') {
-    return res.status(405).json(error(405, 'Method not allowed'))
+    return res.status(405).json(error(405, '请求方法不支持'))
   }
 
   try {
@@ -20,27 +20,10 @@ module.exports = async (req, res) => {
     return res.json(success({
       service: 'task-reward-api',
       status: 'healthy',
-      uptime_seconds: Math.floor(process.uptime()),
-      timestamp: new Date().toISOString(),
-      config: {
-        db_mode: process.env.DATABASE_URL ? 'neon' : 'mysql',
-        jwt_secret_set: Boolean(process.env.JWT_SECRET),
-        database_url_set: Boolean(process.env.DATABASE_URL),
-        db_host_set: Boolean(process.env.DB_HOST),
-        db_name_set: Boolean(process.env.DB_NAME)
-      }
+      timestamp: new Date().toISOString()
     }))
   } catch (err) {
     console.error('Health check failed:', err)
-    return res.status(503).json(error(503, '服务暂不可用', {
-      reason: err && err.message ? err.message : '数据库连接失败',
-      config: {
-        db_mode: process.env.DATABASE_URL ? 'neon' : 'mysql',
-        jwt_secret_set: Boolean(process.env.JWT_SECRET),
-        database_url_set: Boolean(process.env.DATABASE_URL),
-        db_host_set: Boolean(process.env.DB_HOST),
-        db_name_set: Boolean(process.env.DB_NAME)
-      }
-    }))
+    return res.status(503).json(error(503, '服务暂不可用'))
   }
 }

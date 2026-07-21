@@ -1,4 +1,5 @@
 const { toDate, formatDateTime, DEFAULT_TIME_ZONE } = require('./timezone')
+const { notifyTaskTimeout } = require('./wechat-notify')
 
 const TASK_STATUS = {
   PENDING: 'pending',
@@ -61,8 +62,8 @@ const getPublicationStatusText = (status) => {
 
 const getAcceptStatusText = (status) => {
   const map = {
-    accept_pending: '待接单',
-    accept_open: '可接单',
+    accept_pending: '待开放',
+    accept_open: '可参与',
     ended: '已结束',
     paused: '已暂停',
     pending: '待发布'
@@ -94,7 +95,7 @@ const getAcceptStatusTagType = (status) => {
 const sweepTaskLifecycle = async (connection) => {
   const now = Date.now()
   if (now - lastSyncExpiredTasksAt < SYNC_THROTTLE_MS) {
-    return { expiredCount: 0 }
+    return { expiredCount: 0, releasedCount: 0 }
   }
   lastSyncExpiredTasksAt = now
 
@@ -107,25 +108,24 @@ const sweepTaskLifecycle = async (connection) => {
   )
 
   const expiredIds = rows.map((row) => row.id)
-  if (!expiredIds.length) {
-    return { expiredCount: 0 }
+  if (expiredIds.length > 0) {
+    const expiredTaskPlaceholders = expiredIds.map(() => '?').join(', ')
+    await connection.query(
+      `UPDATE tasks
+       SET status = 3,
+           updated_at = NOW()
+       WHERE id IN (${expiredTaskPlaceholders})`,
+      expiredIds
+    )
   }
-  const expiredTaskPlaceholders = expiredIds.map(() => '?').join(', ')
-
-  await connection.query(
-    `UPDATE tasks
-     SET status = 3,
-         updated_at = NOW()
-     WHERE id IN (${expiredTaskPlaceholders})`,
-    expiredIds
-  )
 
   const [draftRows] = await connection.query(
-    `SELECT id
-     FROM submissions
-     WHERE review_status = -1
-       AND expires_at IS NOT NULL
-       AND expires_at <= NOW()`
+    `SELECT s.id, s.user_id, s.task_id, t.title AS task_title
+     FROM submissions s
+     LEFT JOIN tasks t ON t.id = s.task_id
+     WHERE s.review_status = -1
+       AND s.expires_at IS NOT NULL
+       AND s.expires_at <= NOW()`
   )
 
   const expiredDraftIds = draftRows.map((row) => row.id)
@@ -134,6 +134,7 @@ const sweepTaskLifecycle = async (connection) => {
     await connection.query(
       `UPDATE submissions
        SET review_status = -4,
+           status = -4,
            release_reason = '项目超时自动释放',
            released_at = NOW(),
            review_note = '项目超时自动释放',
@@ -141,6 +142,16 @@ const sweepTaskLifecycle = async (connection) => {
        WHERE id IN (${expiredDraftPlaceholders})`,
       expiredDraftIds
     )
+
+    for (const row of draftRows) {
+      notifyTaskTimeout({
+        userId: row.user_id,
+        taskId: row.task_id,
+        taskTitle: row.task_title
+      }).catch((err) => {
+        console.warn('[task-lifecycle] 发送项目超时订阅消息失败:', err.message)
+      })
+    }
   }
 
   return { expiredCount: expiredIds.length, releasedCount: expiredDraftIds.length }

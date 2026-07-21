@@ -17,7 +17,7 @@ const normalizeAddress = (value) => {
   const text = normalizeText(value)
   if (!text) return ''
   return text
-    .replace(/[，,；;、]/g, ',')
+    .replace(/[，、；;]/g, ',')
     .replace(/\s*,\s*/g, ',')
     .replace(/,+/g, ',')
     .replace(/(^,|,$)/g, '')
@@ -182,13 +182,13 @@ const describeIdentityTypes = (types = []) => {
 const buildIdentityConflictReason = (types, platform) => {
   const typeText = describeIdentityTypes(types)
   const platformText = platform ? `平台 ${platform}` : '当前平台'
-  return `检测到与其他账号共享${typeText}，判定为统一用户，已禁止接单（${platformText}）`
+  return `检测到与其他账号共享${typeText}，判定为统一用户，暂不可参与（${platformText}）`
 }
 
 const buildCooldownReason = (platform, cooldownUntil) => {
   const platformText = platform ? `${platform}平台` : '当前平台'
   const untilText = cooldownUntil ? new Date(cooldownUntil).toLocaleString('zh-CN') : '三个月后'
-  return `${platformText}已在三个月内接过单，暂时禁止再次接单，解禁时间：${untilText}`
+  return `${platformText}三个月内已有参与记录，暂不可再次参与，恢复时间：${untilText}`
 }
 
 const buildBlockedReason = (reason, tags = []) => {

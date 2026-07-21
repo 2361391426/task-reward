@@ -331,10 +331,32 @@ router.post('/', async (req, res) => {
         return { error: 'Current account is blocked' }
       }
 
-      const existingInsideTx = txQuery('submissions').find(s =>
-        s.task_id === parseInt(task_id, 10) && s.user_id === decoded.userId
-      )
-      if (existingInsideTx) {
+      const now = new Date()
+      const existingInsideTx = txQuery('submissions')
+        .filter(s => s.task_id === parseInt(task_id, 10) && s.user_id === decoded.userId)
+        .sort((a, b) => new Date(b.created_at || b.submit_time || 0) - new Date(a.created_at || a.submit_time || 0))[0]
+
+      if (!existingInsideTx) {
+        return { error: '请先开始任务后再提交审核' }
+      }
+
+      const existingStatus = normalizeStatus(existingInsideTx.review_status ?? existingInsideTx.status ?? 0)
+      if (
+        existingStatus === -1 &&
+        existingInsideTx.expires_at &&
+        new Date(existingInsideTx.expires_at).getTime() <= now.getTime()
+      ) {
+        txUpdate('submissions', { id: existingInsideTx.id }, {
+          review_status: -4,
+          status: -4,
+          release_reason: '任务超时自动释放',
+          released_at: now.toISOString(),
+          review_note: '任务超时自动释放'
+        })
+        return { error: COOLDOWN_REASON }
+      }
+
+      if (existingStatus !== -1) {
         return { error: 'You have already submitted this task' }
       }
 
@@ -355,7 +377,12 @@ router.post('/', async (req, res) => {
       }
 
       const history = txQuery('submissions')
-        .filter(item => item.user_id === decoded.userId && item.platform === (taskInsideTx.platform || 'taobao'))
+        .filter(item =>
+          item.user_id === decoded.userId &&
+          item.platform === (taskInsideTx.platform || 'taobao') &&
+          item.id !== existingInsideTx.id &&
+          [0, 1, 2].includes(normalizeStatus(item.review_status ?? item.status ?? 0))
+        )
         .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
 
       const lastSubmission = history[0]
@@ -376,9 +403,8 @@ router.post('/', async (req, res) => {
         }
       }
 
-      const createdSubmission = txInsert('submissions', {
-        task_id: parseInt(task_id, 10),
-        user_id: decoded.userId,
+      const submitTime = new Date().toISOString()
+      txUpdate('submissions', { id: existingInsideTx.id }, {
         platform: taskInsideTx.platform || 'taobao',
         paid_amount: actualPaidAmount,
         wechat_id,
@@ -399,25 +425,25 @@ router.post('/', async (req, res) => {
         status: 0,
         review_status: 0,
         review_note: '',
-        submit_time: new Date().toISOString()
+        submit_time: submitTime
       })
 
       upsertIdentityLinks({ queryOne: txQueryOne, update: txUpdate, insert: txInsert, query: txQuery }, decoded.userId, identities, buildSourceRef(req))
       upsertCooldown(
         { queryOne: txQueryOne, update: txUpdate, insert: txInsert },
-        decoded.userId,
-        taskInsideTx.platform || 'taobao',
-        createdSubmission.id,
-        createdSubmission.created_at,
-        addMonths(createdSubmission.created_at, 3),
-        `${taskInsideTx.platform || '当前'}平台三个月内只能接一次单`
-      )
+            decoded.userId,
+            taskInsideTx.platform || 'taobao',
+            existingInsideTx.id,
+            submitTime,
+            addMonths(submitTime, 3),
+            `${taskInsideTx.platform || '当前'}平台三个月内只能接一次单`
+          )
 
       txUpdate('tasks', { id: parseInt(task_id, 10) }, {
         used_quota: (taskInsideTx.used_quota || 0) + 1
       })
 
-      return createdSubmission
+      return { ...existingInsideTx, id: existingInsideTx.id, submit_time: submitTime }
     })
 
     if (submission && submission.error) {

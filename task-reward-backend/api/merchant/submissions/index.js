@@ -123,6 +123,6 @@ module.exports = async (req, res) => {
       res.status(500).json(error(500, '服务器错误'));
     }
   } else {
-    res.status(405).json(error(405, 'Method not allowed'));
+    res.status(405).json(error(405, '请求方法不支持'));
   }
 };

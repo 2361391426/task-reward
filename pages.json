@@ -71,6 +71,22 @@
       }
     },
     {
+      "path": "pages/agreement/index",
+      "style": {
+        "navigationBarTitleText": "用户协议",
+        "enablePullDownRefresh": false,
+        "backgroundTextStyle": "dark"
+      }
+    },
+    {
+      "path": "pages/privacy/index",
+      "style": {
+        "navigationBarTitleText": "隐私条款",
+        "enablePullDownRefresh": false,
+        "backgroundTextStyle": "dark"
+      }
+    },
+    {
       "path": "pages/orders/index",
       "style": {
         "navigationBarTitleText": "我的参与",

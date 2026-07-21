@@ -1,7 +1,7 @@
 {
   "name": "task-reward-miniapp",
   "version": "1.0.0",
-  "description": "任务返现小程序",
+  "description": "诺斯马丁小程序",
   "scripts": {
     "dev:mp-weixin": "cross-env UNI_INPUT_DIR=. uni -p mp-weixin",
     "build:mp-weixin": "cross-env NODE_ENV=development VITE_LOCAL_DEBUG_LOGIN=true VITE_API_BASE_URL=http://192.168.3.22:3001/api VITE_UPLOAD_URL=http://192.168.3.22:3001/api/upload UNI_INPUT_DIR=. uni build -p mp-weixin --mode development --outDir dist/dev/mp-weixin",
@@ -21,7 +21,6 @@
     "@dcloudio/uni-app": "3.0.0-alpha-5000220260306001",
     "@dcloudio/uni-cli-shared": "3.0.0-alpha-5000220260306001",
     "@dcloudio/uni-components": "3.0.0-alpha-5000220260306001",
-    "@dcloudio/uni-mp-weixin": "3.0.0-alpha-5000220260306001",
     "@dcloudio/vite-plugin-uni": "3.0.0-alpha-5000220260306001",
     "cross-env": "^10.1.0",
     "sass": "^1.101.0",

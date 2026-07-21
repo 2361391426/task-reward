@@ -116,7 +116,7 @@ const callTencentCloud = (action, params, label) => {
         }
 
         if (res.statusCode < 200 || res.statusCode >= 300) {
-          reject(new Error(`${label}失败，HTTP 状态码：${res.statusCode}\n${bodyText}`))
+          reject(new Error(`${label}失败：HTTP 状态码 ${res.statusCode}\n${bodyText}`))
           return
         }
 

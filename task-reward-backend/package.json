@@ -1,7 +1,7 @@
 {
   "name": "task-reward-backend",
   "version": "1.0.0",
-  "description": "任务返现平台后端API - Vercel Serverless",
+  "description": "诺斯马丁后端 API",
   "main": "index.js",
   "scripts": {
     "dev": "vercel dev",
@@ -9,9 +9,12 @@
     "start:local": "node server-local.js",
     "check": "node scripts/check-config.js",
     "backup:local": "node scripts/backup-local.js",
+    "migrate": "node scripts/migrate.js",
     "cleanup:uploads": "node scripts/cleanup-uploads.js",
     "cleanup:uploads:weekly": "node scripts/cleanup-uploads.js --weekly",
     "smoke": "node scripts/smoke-test.js",
+    "ops:check": "npm run check && npm run smoke",
+    "ops:cleanup": "npm run cleanup:uploads:weekly",
     "test:p2": "node scripts/p2-regression-test.js",
     "test": "npm run smoke",
     "start:scf": "node scf-server.js",

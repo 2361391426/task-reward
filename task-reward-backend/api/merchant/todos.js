@@ -22,7 +22,7 @@ module.exports = async (req, res) => {
   }
 
   if (req.method !== 'GET') {
-    return res.status(405).json(error(405, 'Method not allowed'));
+    return res.status(405).json(error(405, '请求方法不支持'));
   }
 
   try {
@@ -32,7 +32,7 @@ module.exports = async (req, res) => {
     }
 
     if (!merchantRoleAllowed(auth.merchant, ['owner', 'operator', 'reviewer', 'finance'])) {
-      return res.status(403).json(error(403, 'Permission denied'));
+      return res.status(403).json(error(403, '没有操作权限'));
     }
 
     const merchantId = auth.merchant.id;
@@ -101,6 +101,6 @@ module.exports = async (req, res) => {
     }));
   } catch (err) {
     console.error('Get merchant todos error:', err);
-    return res.status(500).json(error(500, 'Server error'));
+    return res.status(500).json(error(500, '服务器错误'));
   }
 };

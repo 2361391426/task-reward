@@ -1,0 +1,45 @@
+const express = require('express')
+const cors = require('cors')
+
+const app = express()
+
+app.disable('x-powered-by')
+app.use(cors())
+app.use(express.json({ limit: '10mb' }))
+app.use(express.urlencoded({ extended: true, limit: '10mb' }))
+
+const route = (path, handler) => app.all(path, handler)
+
+route('/api/health', require('./api/health'))
+route('/api/upload', require('./api/upload'))
+route('/api/user/login', require('./api/user/login'))
+route('/api/user/info', require('./api/user/info'))
+route('/api/user/phone', require('./api/user/phone'))
+route('/api/user/earnings', require('./api/user/earnings'))
+route('/api/user/withdrawals', require('./api/user/withdrawals'))
+route('/api/tasks', require('./api/tasks/index'))
+route('/api/tasks/:id', require('./api/tasks/[id]'))
+route('/api/submissions', require('./api/submissions/index'))
+route('/api/submissions/my', require('./api/submissions/my'))
+route('/api/submissions/:id', require('./api/submissions/[id]'))
+route('/api/feedbacks', require('./api/feedbacks/index'))
+route('/api/system/task-lifecycle', require('./api/system/task-lifecycle'))
+route('/api/merchant/login', require('./api/merchant/login'))
+route('/api/merchant/tasks', require('./api/merchant/tasks/index'))
+route('/api/merchant/submissions', require('./api/merchant/submissions/index'))
+route('/api/merchant/submissions/review', require('./api/merchant/submissions/review'))
+route('/api/merchant/users', require('./api/merchant/users/index'))
+route('/api/merchant/staffs', require('./api/merchant/staffs/index'))
+route('/api/merchant/withdrawals', require('./api/merchant/withdrawals/index'))
+route('/api/merchant/recharges', require('./api/merchant/recharges/index'))
+route('/api/merchant/stats', require('./api/merchant/stats/index'))
+route('/api/merchant/todos', require('./api/merchant/todos'))
+route('/api/merchant/risk-users', require('./api/merchant/risk-users/index'))
+route('/api/merchant/audit-logs', require('./api/merchant/audit-logs/index'))
+route('/api/merchant/feedbacks', require('./api/merchant/feedbacks/index'))
+
+app.use((req, res) => {
+  res.status(404).json({ code: 404, message: '接口不存在', data: null })
+})
+
+module.exports = app
