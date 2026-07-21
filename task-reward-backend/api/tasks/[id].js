@@ -35,50 +35,92 @@ const isSameDay = (a, b = new Date()) => {
 }
 
 const upsertRiskFlag = async (connection, userId, reason, tags = [], source = 'claim') => {
+  const [existingRows] = await connection.query(
+    'SELECT id FROM user_risk_flags WHERE user_id = ? LIMIT 1',
+    [userId]
+  )
+
+  if (existingRows[0]) {
+    await connection.query(
+      `UPDATE user_risk_flags
+       SET status = 1,
+           risk_reason = ?,
+           risk_tags = ?,
+           source = ?,
+           blocked_at = NOW(),
+           cleared_at = NULL,
+           updated_at = NOW()
+       WHERE user_id = ?`,
+      [reason, JSON.stringify(tags), source, userId]
+    )
+    return
+  }
+
   await connection.query(
     `INSERT INTO user_risk_flags
      (user_id, status, risk_reason, risk_tags, source, blocked_at, cleared_at, created_at, updated_at)
-     VALUES (?, 1, ?, ?, ?, NOW(), NULL, NOW(), NOW())
-     ON DUPLICATE KEY UPDATE
-       status = 1,
-       risk_reason = VALUES(risk_reason),
-       risk_tags = VALUES(risk_tags),
-       source = VALUES(source),
-       blocked_at = NOW(),
-       cleared_at = NULL,
-       updated_at = NOW()`,
+     VALUES (?, 1, ?, ?, ?, NOW(), NULL, NOW(), NOW())`,
     [userId, reason, JSON.stringify(tags), source]
   )
 }
 
 const upsertCooldown = async (connection, userId, platform, submissionId, lastSubmissionAt, cooldownUntil, reason) => {
+  const [existingRows] = await connection.query(
+    'SELECT id FROM user_platform_cooldowns WHERE user_id = ? AND platform = ? LIMIT 1',
+    [userId, platform]
+  )
+
+  if (existingRows[0]) {
+    await connection.query(
+      `UPDATE user_platform_cooldowns
+       SET last_submission_id = ?,
+           last_submission_at = ?,
+           cooldown_until = ?,
+           cooldown_months = 3,
+           reason = ?,
+           updated_at = NOW()
+       WHERE user_id = ? AND platform = ?`,
+      [submissionId, lastSubmissionAt, cooldownUntil, reason, userId, platform]
+    )
+    return
+  }
+
   await connection.query(
     `INSERT INTO user_platform_cooldowns
      (user_id, platform, last_submission_id, last_submission_at, cooldown_until, cooldown_months, reason, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, 3, ?, NOW(), NOW())
-     ON DUPLICATE KEY UPDATE
-       last_submission_id = VALUES(last_submission_id),
-       last_submission_at = VALUES(last_submission_at),
-       cooldown_until = VALUES(cooldown_until),
-       cooldown_months = VALUES(cooldown_months),
-       reason = VALUES(reason),
-       updated_at = NOW()`,
+     VALUES (?, ?, ?, ?, ?, 3, ?, NOW(), NOW())`,
     [userId, platform, submissionId, lastSubmissionAt, cooldownUntil, reason]
   )
 }
 
 const upsertIdentityLinks = async (connection, userId, candidates, sourceRef) => {
   for (const candidate of candidates) {
+    const [existingRows] = await connection.query(
+      `SELECT id
+       FROM user_identity_links
+       WHERE identity_type = ? AND identity_hash = ?
+       LIMIT 1`,
+      [candidate.type, candidate.hash]
+    )
+
+    if (existingRows[0]) {
+      await connection.query(
+        `UPDATE user_identity_links
+         SET user_id = ?,
+             identity_value = ?,
+             source = 'claim',
+             source_ref = ?,
+             updated_at = NOW()
+         WHERE identity_type = ? AND identity_hash = ?`,
+        [userId, candidate.maskedValue, sourceRef, candidate.type, candidate.hash]
+      )
+      continue
+    }
+
     await connection.query(
       `INSERT INTO user_identity_links
        (user_id, identity_type, identity_hash, identity_value, source, source_ref, created_at, updated_at)
-       VALUES (?, ?, ?, ?, 'claim', ?, NOW(), NOW())
-       ON DUPLICATE KEY UPDATE
-         user_id = VALUES(user_id),
-         identity_value = VALUES(identity_value),
-         source = VALUES(source),
-         source_ref = VALUES(source_ref),
-         updated_at = NOW()`,
+       VALUES (?, ?, ?, ?, 'claim', ?, NOW(), NOW())`,
       [userId, candidate.type, candidate.hash, candidate.maskedValue, sourceRef]
     )
   }

@@ -53,15 +53,22 @@ const recordLoginFailure = async (key) => {
   const count = current.count + 1
   const lockedUntil = count >= MAX_LOGIN_ATTEMPTS ? new Date(Date.now() + LOGIN_LOCK_MS).toISOString() : null
 
-  await db.execute(
-    `INSERT INTO login_attempts (login_key, count, locked_until, created_at, updated_at)
-     VALUES (?, ?, ?, NOW(), NOW())
-     ON DUPLICATE KEY UPDATE
-       count = VALUES(count),
-       locked_until = VALUES(locked_until),
-       updated_at = NOW()`,
-    [key, count, lockedUntil]
+  const existing = await db.queryOne(
+    'SELECT login_key FROM login_attempts WHERE login_key = ?',
+    [key]
   )
+
+  if (existing) {
+    await db.execute(
+      'UPDATE login_attempts SET count = ?, locked_until = ?, updated_at = NOW() WHERE login_key = ?',
+      [count, lockedUntil, key]
+    )
+  } else {
+    await db.execute(
+      'INSERT INTO login_attempts (login_key, count, locked_until, created_at, updated_at) VALUES (?, ?, ?, NOW(), NOW())',
+      [key, count, lockedUntil]
+    )
+  }
 
   return { count, lockedUntil: lockedUntil ? new Date(lockedUntil).getTime() : 0 }
 }

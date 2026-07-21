@@ -14,8 +14,8 @@ const getEnv = (...names) => {
   return ''
 }
 
-const secretId = getEnv('TENCENT_SECRET_ID', 'TENCENTCLOUD_SECRET_ID')
-const secretKey = getEnv('TENCENT_SECRET_KEY', 'TENCENTCLOUD_SECRET_KEY')
+const secretId = getEnv('TENCENT_SECRET_ID', 'TENCENTCLOUD_SECRET_ID').trim()
+const secretKey = getEnv('TENCENT_SECRET_KEY', 'TENCENTCLOUD_SECRET_KEY').trim()
 const region = getEnv('TENCENT_REGION', 'TENCENTCLOUD_REGION') || 'ap-guangzhou'
 const functionName = getEnv('SCF_FUNCTION_NAME') || 'taskreward'
 const namespace = getEnv('SCF_NAMESPACE') || 'default'
@@ -32,6 +32,10 @@ if (!secretId || !secretKey) {
   fail('缺少腾讯云密钥，请在 GitHub Secrets 配置 TENCENT_SECRET_ID 和 TENCENT_SECRET_KEY。')
 }
 
+if (!secretId.startsWith('AKID')) {
+  console.warn('警告：TENCENT_SECRET_ID 通常以 AKID 开头，请确认填的是腾讯云访问密钥 SecretId，不是 Cloudflare、GitHub 或其他平台密钥。')
+}
+
 if (!fs.existsSync(zipPath)) {
   fail(`未找到函数压缩包：${zipPath}，请先执行 npm run build:scf。`)
 }
@@ -44,8 +48,9 @@ const hmac = (key, message, encoding) => crypto.createHmac('sha256', key).update
 const createSignedOptions = (action, payload) => {
   const timestamp = Math.floor(Date.now() / 1000)
   const date = new Date(timestamp * 1000).toISOString().slice(0, 10)
-  const canonicalHeaders = `content-type:application/json; charset=utf-8\nhost:${endpoint}\nx-tc-action:${action.toLowerCase()}\n`
-  const signedHeaders = 'content-type;host;x-tc-action'
+  const contentType = 'application/json; charset=utf-8'
+  const canonicalHeaders = `content-type:${contentType}\nhost:${endpoint}\n`
+  const signedHeaders = 'content-type;host'
   const canonicalRequest = [
     'POST',
     '/',
@@ -82,7 +87,7 @@ const createSignedOptions = (action, payload) => {
     path: '/',
     headers: {
       Authorization: authorization,
-      'Content-Type': 'application/json; charset=utf-8',
+      'Content-Type': contentType,
       Host: endpoint,
       'X-TC-Action': action,
       'X-TC-Timestamp': String(timestamp),
