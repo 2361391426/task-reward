@@ -1,5 +1,6 @@
 {
-  "description": "项目配置文件",
+  "description": "诺斯马丁小程序项目配置",
+  "miniprogramRoot": "dist/build/mp-weixin/",
   "packOptions": {
     "ignore": []
   },
@@ -39,7 +40,7 @@
     "minifyWXSS": true
   },
   "compileType": "miniprogram",
-  "libVersion": "2.19.4",
+  "libVersion": "3.17.0",
   "appid": "wx5220a54fef08be16",
   "projectname": "task-reward-miniapp",
   "debugOptions": {
