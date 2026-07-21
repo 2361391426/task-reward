@@ -6,21 +6,21 @@ const STEP_DEFINITIONS = [
   {
     id: 1,
     key: 'search',
-    name: '搜索结果截图',
+    name: '搜索结果凭证',
     count: 1,
     fieldNames: ['screenshot_search']
   },
   {
     id: 2,
     key: 'shop',
-    name: '页面浏览截图',
+    name: '页面浏览凭证',
     count: 3,
     fieldNames: ['screenshot_shop_1', 'screenshot_shop_2', 'screenshot_shop_3']
   },
   {
     id: 3,
     key: 'follow',
-    name: '互动凭证截图',
+    name: '互动凭证',
     count: 1,
     fieldNames: ['screenshot_follow'],
     socialOnly: true,
@@ -29,7 +29,7 @@ const STEP_DEFINITIONS = [
   {
     id: 4,
     key: 'share',
-    name: '补充凭证截图',
+    name: '补充凭证',
     count: 1,
     fieldNames: ['screenshot_share'],
     socialOnly: true,
@@ -38,21 +38,21 @@ const STEP_DEFINITIONS = [
   {
     id: 5,
     key: 'detail',
-    name: '详情页截图',
+    name: '详情页凭证',
     count: 1,
     fieldNames: ['screenshot_detail']
   },
   {
     id: 6,
     key: 'cart',
-    name: '体验过程截图',
+    name: '体验过程凭证',
     count: 1,
     fieldNames: ['screenshot_cart']
   },
   {
     id: 7,
     key: 'paid_order',
-    name: '交易凭证截图',
+    name: '交易凭证',
     count: 1,
     fieldNames: ['screenshot_paid_order'],
     highRisk: true

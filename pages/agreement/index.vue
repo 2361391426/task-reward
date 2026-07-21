@@ -10,14 +10,14 @@
       <view class="section">
         <text class="section-title">一、协议范围</text>
         <text class="paragraph">
-          本协议适用于您使用诺斯马丁小程序及相关服务，包括浏览体验项目、参与项目、提交凭证、查看审核结果、积分记录、奖励结算、意见反馈等功能。
+          本协议适用于您使用诺斯马丁小程序及相关服务，包括浏览体验项目、参与项目、提交凭证、查看审核结果、积分记录、意见反馈等功能。
         </text>
       </view>
 
       <view class="section">
         <text class="section-title">二、账号与授权</text>
         <text class="paragraph">
-          您需要通过微信授权登录后使用参与项目、提交凭证、奖励结算等功能。您应确保提供的昵称、头像、手机号、微信号、订单号、地址及其他资料真实、准确、完整。
+          您需要通过微信授权登录后使用参与项目、提交凭证等功能。您应确保提供的昵称、头像、手机号、微信号、活动记录号、地址及其他资料真实、准确、完整。
         </text>
       </view>
 
@@ -34,7 +34,7 @@
       <view class="section">
         <text class="section-title">四、禁止行为</text>
         <text class="paragraph">
-          您不得提交虚假截图、冒用他人资料、重复参与同平台限制项目、使用多账号规避风控、篡改订单信息、上传违法违规内容，或以其他方式影响平台正常运营。
+          您不得提交虚假截图、冒用他人资料、重复参与限制项目、使用多账号规避风控、篡改记录信息、上传违法违规内容，或以其他方式影响平台正常运营。
         </text>
         <text class="paragraph">
           同一手机号、微信账号、设备、网络地址、收货地址或其他可识别信息高度一致的，平台可视为同一用户进行参与资格判断。
@@ -42,16 +42,19 @@
       </view>
 
       <view class="section">
-        <text class="section-title">五、积分与奖励结算</text>
+        <text class="section-title">五、积分与权益</text>
         <text class="paragraph">
-          平台根据项目规则、提交凭证和审核结果记录体验奖励积分。若发现异常参与、材料不完整、订单信息不符或违反规则，平台有权驳回、扣回或暂停相关积分结算。
+          平台根据项目规则、提交凭证和审核结果记录体验积分。积分仅作为活动体验记录和权益核算依据，不等同现金，不支持用户在小程序内自行发起线上资金操作。
+        </text>
+        <text class="paragraph">
+          若发现异常参与、材料不完整、信息不符或违反规则，平台有权驳回、扣回或暂停相关积分记录。具体权益处理以平台活动规则和后台核验结果为准。
         </text>
       </view>
 
       <view class="section">
         <text class="section-title">六、内容与资料</text>
         <text class="paragraph">
-          您上传的图片、视频、文字、订单信息等资料仅用于项目审核、风控校验、客服处理、争议核验和依法留存。您应确保上传内容不侵犯他人合法权益。
+          您上传的图片、视频、文字、记录信息等资料仅用于项目审核、风控校验、客服处理、争议核验和依法留存。您应确保上传内容不侵犯他人合法权益。
         </text>
       </view>
 
@@ -63,14 +66,7 @@
       </view>
 
       <view class="section">
-        <text class="section-title">八、责任限制</text>
-        <text class="paragraph">
-          因不可抗力、网络异常、第三方平台限制、用户设备环境、信息填写错误等原因导致服务中断、审核延迟或资料无法提交的，平台将在合理范围内协助处理。
-        </text>
-      </view>
-
-      <view class="section">
-        <text class="section-title">九、联系我们</text>
+        <text class="section-title">八、联系我们</text>
         <text class="paragraph">
           如您对本协议、项目规则、积分记录或个人资料有疑问，可通过小程序“意见反馈”提交问题，平台将在核实后处理。
         </text>

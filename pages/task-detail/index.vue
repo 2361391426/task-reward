@@ -120,7 +120,7 @@
         <text class="notice-title">注意事项</text>
         <text class="notice-text">1. 提交后进入审核流程</text>
         <text class="notice-text">2. 请保留体验过程凭证</text>
-        <text class="notice-text">3. 审核通过后按规则进入积分兑换</text>
+        <text class="notice-text">3. 审核通过后按规则进入积分记录</text>
       </view>
     </view>
 

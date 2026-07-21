@@ -96,7 +96,7 @@
 import { getTaskList, getMySubmissions } from '../../api/task.js'
 import { getEarnings, getUserInfo } from '../../api/user.js'
 import { formatTime, platformText, submissionStatusText } from '../../utils/format.js'
-import { isHighRiskTask, REVIEW_SAFE_MODE } from '../../utils/compliance.js'
+import { isHighRiskTask } from '../../utils/compliance.js'
 
 const IS_DEV = import.meta.env.DEV
 
@@ -115,12 +115,10 @@ export default {
       platformStorageKey: 'task-reward:last-platform',
       platformTabs: [
         { label: '全部', value: '' },
-        { label: '淘宝', value: 'taobao' },
-        { label: '京东', value: 'jd' },
-        ...(REVIEW_SAFE_MODE ? [] : [
-          { label: '抖音', value: 'douyin' },
-          { label: '小红书', value: 'xiaohongshu' }
-        ])
+        { label: '电商平台', value: 'taobao' },
+        { label: '精选电商', value: 'jd' },
+        { label: '内容平台', value: 'douyin' },
+        { label: '内容社区', value: 'xiaohongshu' }
       ],
       submissionMap: {},
       userInfo: {},

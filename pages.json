@@ -49,7 +49,7 @@
     {
       "path": "pages/withdraw/index",
       "style": {
-        "navigationBarTitleText": "积分兑换",
+        "navigationBarTitleText": "积分记录",
         "enablePullDownRefresh": true,
         "backgroundTextStyle": "dark"
       }
@@ -122,5 +122,3 @@
     ]
   }
 }
-
-

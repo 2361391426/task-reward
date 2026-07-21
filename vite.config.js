@@ -79,6 +79,12 @@ const normalizeMiniappProjectConfig = (outputDir) => {
   delete config.miniprogramRoot
   delete config.srcMiniprogramRoot
   config.description = '诺斯马丁小程序构建产物'
+  config.libVersion = '3.14.3'
+  config.setting = {
+    ...(config.setting || {}),
+    useIsolateContext: true,
+    useCompilerModule: false
+  }
   writeFileSync(configPath, `${JSON.stringify(config, null, 2)}\n`, 'utf8')
   console.log(`已修正构建产物项目配置: ${relative(__dirname, configPath)}`)
 }

@@ -80,15 +80,8 @@
       <input
         class="input"
         type="text"
-        placeholder="请输入订单号，支持复制粘贴"
+        placeholder="请输入活动记录号，支持复制粘贴"
         v-model="orderNumber"
-      />
-      <input
-        class="input"
-        type="text"
-        inputmode="decimal"
-        placeholder="请输入实际数值，如无可填0"
-        v-model="paidAmount"
       />
     </view>
 
@@ -116,7 +109,7 @@ export default {
       wechatId: '',
       phoneNumber: '',
       orderNumber: '',
-      paidAmount: '',
+      paidAmount: '0',
       submitting: false,
       uploadSteps: [],
       submissionDetail: null,
@@ -197,8 +190,7 @@ export default {
       const wechatValid = String(this.wechatId || '').trim().length > 0
       const phoneValid = /^1[3-9]\d{9}$/.test(String(this.phoneNumber || '').trim())
       const orderValid = String(this.orderNumber || '').trim().length > 0
-      const paidValid = Number(this.paidAmount) >= 0
-      return allImagesUploaded && wechatValid && phoneValid && orderValid && paidValid && !this.riskBlocked
+      return allImagesUploaded && wechatValid && phoneValid && orderValid && !this.riskBlocked
     },
 
     validationMessage() {
@@ -221,11 +213,7 @@ export default {
       }
 
       if (!String(this.orderNumber || '').trim()) {
-        return '请填写订单号'
-      }
-
-      if (!(Number(this.paidAmount) >= 0)) {
-        return '请填写正确的实际数值'
+        return '请填写活动记录号'
       }
 
       return ''
@@ -387,7 +375,7 @@ export default {
       this.wechatId = draft.wechatId || ''
       this.phoneNumber = draft.phoneNumber || ''
       this.orderNumber = draft.orderNumber || ''
-      this.paidAmount = draft.paidAmount || ''
+      this.paidAmount = draft.paidAmount || '0'
       this.resetUploadSteps(draft.uploadSteps)
       return true
     },
@@ -450,7 +438,7 @@ export default {
         this.wechatId = res.wechat_id || ''
         this.phoneNumber = res.phone_number || ''
         this.orderNumber = res.order_number || ''
-        this.paidAmount = res.paid_amount ? String(res.paid_amount) : ''
+        this.paidAmount = res.paid_amount ? String(res.paid_amount) : '0'
         this.saveDraft()
       } catch (error) {
         console.error('加载提交数据失败', error)
@@ -516,7 +504,7 @@ export default {
           wechat_id: this.wechatId,
           phone_number: this.phoneNumber,
           order_number: this.orderNumber,
-          paid_amount: Number(this.paidAmount)
+          paid_amount: 0
         }
 
         this.uploadSteps.forEach((step) => {

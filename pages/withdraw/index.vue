@@ -7,46 +7,20 @@
       </view>
       <view class="summary-divider"></view>
       <view class="summary-item">
-        <text class="summary-label">冻结积分</text>
-        <text class="summary-value muted">{{ earnings.frozen_balance || 0 }}积分</text>
+        <text class="summary-label">待确认积分</text>
+        <text class="summary-value muted">{{ frozenBalance }}积分</text>
       </view>
     </view>
 
-    <view class="card form-card">
-      <view class="form-item">
-        <text class="form-label">兑换积分</text>
-        <input
-          v-model="form.amount"
-          type="digit"
-          class="form-input"
-          placeholder="请输入要兑换的积分"
-        />
-      </view>
-
-      <view class="form-item">
-        <text class="form-label">兑换方式</text>
-        <picker :range="withdrawTypes" range-key="label" @change="handleTypeChange">
-          <view class="picker-value">{{ currentWithdrawType.label }}</view>
-        </picker>
-      </view>
-
-      <view class="form-item">
-        <text class="form-label">接收账号</text>
-        <input
-          v-model="form.account_info"
-          class="form-input"
-          placeholder="请输入微信号或支付宝账号"
-        />
-      </view>
-
-      <button class="btn-primary submit-btn" :loading="submitting" :disabled="submitting || !canSubmit" @click="submit">
-        提交兑换申请
-      </button>
+    <view class="notice card">
+      <text class="notice-title">积分说明</text>
+      <text class="notice-text">积分仅用于活动体验记录，不等同现金，不提供用户自行发起线上资金操作入口。</text>
+      <text class="notice-text">审核通过后的积分会进入记录，具体权益与结算以平台活动规则为准。</text>
     </view>
 
     <view class="section">
       <view class="section-header">
-        <text class="section-title">兑换记录</text>
+        <text class="section-title">积分记录</text>
       </view>
 
       <view class="record-list" v-if="withdrawalList.length">
@@ -57,11 +31,9 @@
               {{ statusText(item.status) }}
             </view>
           </view>
-          <text class="record-text">实际兑换：{{ item.actual_amount || 0 }}积分</text>
-          <text class="record-text">服务费：{{ item.fee || 0 }}积分</text>
-          <text class="record-text">账号：{{ item.account_info || '-' }}</text>
-          <text class="record-text">时间：{{ formatTime(item.created_at) }}</text>
-          <text class="record-text error" v-if="item.reject_reason">原因：{{ item.reject_reason }}</text>
+          <text class="record-text">确认积分：{{ item.actual_amount || 0 }}积分</text>
+          <text class="record-text">记录时间：{{ formatTime(item.created_at) }}</text>
+          <text class="record-text error" v-if="item.reject_reason">说明：{{ item.reject_reason }}</text>
         </view>
       </view>
 
@@ -75,82 +47,40 @@
 
       <view v-else class="empty-state">
         <image class="empty-illustration" src="/static/images/hero-wallet.png" mode="aspectFit" />
-        <text>暂无兑换记录</text>
+        <text>暂无积分记录</text>
       </view>
     </view>
   </view>
 </template>
 
 <script>
-import { getEarnings, getWithdrawals, submitWithdrawal, invalidateUserCache } from '../../api/user.js'
+import { getEarnings, getWithdrawals } from '../../api/user.js'
 import { formatTime, withdrawalStatusText } from '../../utils/format.js'
-import { createDraftScheduler } from '../../utils/draft.js'
 
 export default {
   data() {
     return {
-      submitting: false,
       loadingRecords: false,
       loadingMoreRecords: false,
       earnings: {},
       withdrawalList: [],
       withdrawalPage: 1,
       withdrawalPageSize: 10,
-      withdrawalHasMore: true,
-      withdrawTypes: [
-        { label: '微信', value: 1 },
-        { label: '支付宝', value: 2 }
-      ],
-      currentWithdrawType: { label: '微信', value: 1 },
-      form: {
-        amount: '',
-        withdraw_type: 1,
-        account_info: ''
-      }
+      withdrawalHasMore: true
     }
   },
 
-  created() {
-    this.draftScheduler = createDraftScheduler(() => this.saveDraft(), 400)
-  },
-
   computed: {
-    draftKey() {
-      let userId = 'guest'
-      try {
-        const userInfo = uni.getStorageSync('userInfo')
-        if (userInfo) {
-          const parsed = typeof userInfo === 'string' ? JSON.parse(userInfo) : userInfo
-          userId = parsed?.id ? String(parsed.id) : userId
-        }
-      } catch (error) {
-        console.error('解析兑换草稿范围失败', error)
-      }
-      return `task-reward:withdraw-draft:${userId}`
-    },
-
     availableBalance() {
       return Number(this.earnings.available_balance || 0)
     },
 
-    canSubmit() {
-      const amount = Number(this.form.amount)
-      const account = this.form.account_info.trim()
-      return amount > 0 && amount <= this.availableBalance && account.length > 0
-    }
-  },
-
-  watch: {
-    form: {
-      deep: true,
-      handler() {
-        this.scheduleSaveDraft()
-      }
+    frozenBalance() {
+      return Number(this.earnings.frozen_balance || 0)
     }
   },
 
   onShow() {
-    this.loadDraft()
     this.loadData(true)
   },
 
@@ -166,72 +96,7 @@ export default {
     this.loadMoreRecords()
   },
 
-  onHide() {
-    this.flushDraftSave()
-  },
-
-  onUnload() {
-    this.flushDraftSave()
-  },
-
   methods: {
-    buildDraftPayload() {
-      return {
-        amount: this.form.amount,
-        withdraw_type: this.form.withdraw_type,
-        account_info: this.form.account_info
-      }
-    },
-
-    applyDraft(draft) {
-      if (!draft) return false
-
-      this.form.amount = draft.amount || ''
-      this.form.account_info = draft.account_info || ''
-
-      const draftType = Number(draft.withdraw_type)
-      const matchedType = this.withdrawTypes.find(type => type.value === draftType) || this.withdrawTypes[0]
-      this.currentWithdrawType = matchedType
-      this.form.withdraw_type = matchedType.value
-      return true
-    },
-
-    loadDraft() {
-      try {
-        const raw = uni.getStorageSync(this.draftKey)
-        if (!raw) return false
-        const draft = typeof raw === 'string' ? JSON.parse(raw) : raw
-        return this.applyDraft(draft)
-      } catch (error) {
-        console.error('加载兑换草稿失败', error)
-        return false
-      }
-    },
-
-    saveDraft() {
-      try {
-        uni.setStorageSync(this.draftKey, JSON.stringify(this.buildDraftPayload()))
-      } catch (error) {
-        console.error('保存兑换草稿失败', error)
-      }
-    },
-
-    scheduleSaveDraft() {
-      this.draftScheduler?.schedule()
-    },
-
-    flushDraftSave() {
-      this.draftScheduler?.flush()
-    },
-
-    clearDraft() {
-      try {
-        uni.removeStorageSync(this.draftKey)
-      } catch (error) {
-        console.error('清理兑换草稿失败', error)
-      }
-    },
-
     async loadData(reset = false) {
       if (reset) {
         this.withdrawalPage = 1
@@ -266,8 +131,8 @@ export default {
         this.withdrawalPage = page + 1
         this.withdrawalHasMore = this.withdrawalList.length < total && list.length >= returnedPageSize
       } catch (error) {
-        console.error('加载兑换数据失败', error)
-        uni.showToast({ title: '加载兑换数据失败', icon: 'none' })
+        console.error('加载积分记录失败', error)
+        uni.showToast({ title: '加载积分记录失败', icon: 'none' })
       } finally {
         this.loadingRecords = false
         this.loadingMoreRecords = false
@@ -279,53 +144,6 @@ export default {
         return
       }
       this.loadData(false)
-    },
-
-    handleTypeChange(event) {
-      const index = Number(event.detail.value)
-      const type = this.withdrawTypes[index]
-      if (!type) return
-      this.currentWithdrawType = type
-      this.form.withdraw_type = type.value
-      this.saveDraft()
-    },
-
-    async submit() {
-      const amount = Number(this.form.amount)
-      if (!amount || amount <= 0) {
-        uni.showToast({ title: '请输入有效积分', icon: 'none' })
-        return
-      }
-
-      if (amount > this.availableBalance) {
-        uni.showToast({ title: '兑换积分不能超过可用积分', icon: 'none' })
-        return
-      }
-
-      if (!this.form.account_info.trim()) {
-        uni.showToast({ title: '请输入接收账号', icon: 'none' })
-        return
-      }
-
-      try {
-        this.submitting = true
-        await submitWithdrawal({
-          amount,
-          withdraw_type: this.form.withdraw_type,
-          account_info: this.form.account_info.trim()
-        })
-        invalidateUserCache()
-        uni.showToast({ title: '兑换申请已提交', icon: 'success' })
-        this.form.amount = ''
-        this.form.account_info = ''
-        this.clearDraft()
-        await this.loadData(true)
-      } catch (error) {
-        console.error('提交兑换失败', error)
-        uni.showToast({ title: '提交失败', icon: 'none' })
-      } finally {
-        this.submitting = false
-      }
     },
 
     statusText(status) {
@@ -381,47 +199,22 @@ export default {
   color: #334155;
 }
 
-.form-card {
-  display: flex;
-  flex-direction: column;
-  gap: 24rpx;
-}
-
-.form-item {
+.notice {
   display: flex;
   flex-direction: column;
   gap: 12rpx;
 }
 
-.form-label {
-  font-size: 28rpx;
-  color: #334155;
-}
-
-.form-input {
-  background: #f8fafc;
-  border: 1rpx solid #e2e8f0;
-  border-radius: 14rpx;
-  height: 88rpx;
-  padding: 0 22rpx;
-  font-size: 28rpx;
+.notice-title {
+  font-size: 30rpx;
+  font-weight: 700;
   color: #111827;
 }
 
-.picker-value {
-  background: #f8fafc;
-  border: 1rpx solid #e2e8f0;
-  border-radius: 14rpx;
-  height: 88rpx;
-  display: flex;
-  align-items: center;
-  padding: 0 22rpx;
-  font-size: 28rpx;
-  color: #111827;
-}
-
-.submit-btn {
-  margin-top: 6rpx;
+.notice-text {
+  font-size: 25rpx;
+  line-height: 1.7;
+  color: #64748b;
 }
 
 .section {

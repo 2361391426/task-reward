@@ -1,4 +1,5 @@
 import dayjs from 'dayjs'
+import { REVIEW_SAFE_MODE } from './compliance.js'
 
 export const formatTime = (time) => {
   if (!time) return ''
@@ -13,12 +14,14 @@ export const formatDate = (time) => {
 }
 
 export const platformText = (platform) => {
-  const map = {
-    douyin: '短视频平台',
+  const safeMap = {
+    douyin: '内容平台',
     xiaohongshu: '内容社区',
-    taobao: '淘宝',
-    jd: '京东'
+    taobao: '电商平台',
+    jd: '电商平台'
   }
+  const normalMap = safeMap
+  const map = REVIEW_SAFE_MODE ? safeMap : normalMap
   return map[platform] || platform || '未知'
 }
 
@@ -44,7 +47,7 @@ export const taskStatusText = (status) => {
 export const withdrawalStatusText = (status) => {
   const map = {
     0: '待处理',
-    1: '已通过',
+    1: '已确认',
     2: '已驳回'
   }
   return map[Number(status)] || '未知'

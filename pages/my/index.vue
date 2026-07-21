@@ -59,12 +59,12 @@
 
     <view class="wallet-card card">
       <view class="wallet-main">
-        <text class="wallet-title">积分兑换</text>
+        <text class="wallet-title">积分记录</text>
         <text class="wallet-amount">{{ Number(userInfo.available_balance || 0).toFixed(2) }}积分</text>
       </view>
       <view class="wallet-side">
-        <text class="wallet-link" @click="goWithdraw">查看明细</text>
-        <button class="wallet-btn" @click="goWithdraw">申请兑换</button>
+        <text class="wallet-link" @click="goWithdraw">查看记录</text>
+        <button class="wallet-btn" @click="goWithdraw">积分明细</button>
       </view>
     </view>
 

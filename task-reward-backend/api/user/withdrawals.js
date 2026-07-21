@@ -1,21 +1,8 @@
 const db = require('../../lib/db')
 const { authenticateUser } = require('../../lib/auth')
 const { success, error, ErrorCodes } = require('../../lib/response')
-const { encrypt, decrypt } = require('../../lib/crypto')
+const { decrypt } = require('../../lib/crypto')
 const { normalizePagination } = require('../../lib/pagination')
-
-const readConfigNumber = async (key, fallback) => {
-  try {
-    const row = await db.queryOne(
-      'SELECT config_value FROM system_config WHERE config_key = ?',
-      [key]
-    )
-    const value = parseFloat(row?.config_value)
-    return Number.isNaN(value) ? fallback : value
-  } catch (err) {
-    return fallback
-  }
-}
 
 const safeDecrypt = (value) => {
   if (!value) return ''
@@ -64,122 +51,31 @@ module.exports = async (req, res) => {
       )
 
       return res.json(success({
-        total: totalResult?.total || 0,
+        total: Number(totalResult?.total || 0),
         page: currentPage,
         page_size: pageSize,
         list: rows.map(row => ({
           ...row,
-          amount: parseFloat(row.amount || 0),
-          fee: parseFloat(row.fee || 0),
-          actual_amount: parseFloat(row.actual_amount || 0),
-          status: parseInt(row.status, 10) || 0,
-          withdraw_type: parseInt(row.withdraw_type, 10) || 1,
+          amount: Number(row.amount || 0),
+          fee: Number(row.fee || 0),
+          actual_amount: Number(row.actual_amount || 0),
+          status: Number(row.status || 0),
+          withdraw_type: Number(row.withdraw_type || 1),
           account_info: safeDecrypt(row.account_info)
         }))
       }))
     }
 
     if (req.method === 'POST') {
-      const amount = parseFloat(req.body.amount)
-      const withdrawType = parseInt(req.body.withdraw_type || 1, 10)
-      const accountInfo = (req.body.account_info || '').trim()
-
-      if (Number.isNaN(amount) || amount <= 0) {
-        return res.status(400).json(error(ErrorCodes.PARAM_ERROR, '奖励结算金额不正确'))
-      }
-      if (![1, 2].includes(withdrawType)) {
-        return res.status(400).json(error(ErrorCodes.PARAM_ERROR, '奖励结算方式不正确'))
-      }
-      if (!accountInfo) {
-        return res.status(400).json(error(ErrorCodes.PARAM_ERROR, '请填写收款账号信息'))
-      }
-
-      const minAmount = await readConfigNumber('min_withdrawal_amount', 10)
-      const feeRate = await readConfigNumber('withdrawal_fee_rate', 0.01)
-      if (amount < minAmount) {
-        return res.status(400).json(error(ErrorCodes.WITHDRAWAL_AMOUNT_TOO_LOW, `最低结算金额为 ${minAmount} 积分`))
-      }
-
-      const withdrawalFee = Number((amount * feeRate).toFixed(2))
-      const actualAmount = Number((amount - withdrawalFee).toFixed(2))
-      if (actualAmount <= 0) {
-        return res.status(400).json(error(ErrorCodes.PARAM_ERROR, '扣除服务费后可结算积分不足'))
-      }
-
-      const result = await db.transaction(async (connection) => {
-        const [userRows] = await connection.query(
-          'SELECT id, available_balance, frozen_balance FROM users WHERE id = ? FOR UPDATE',
-          [auth.user.id]
-        )
-        const user = userRows[0]
-        if (!user) {
-          throw new Error('user_not_found')
-        }
-
-        const availableBalance = parseFloat(user.available_balance || 0)
-        if (availableBalance < amount) {
-          throw new Error('insufficient_balance')
-        }
-
-        const [updateResult] = await connection.query(
-          `UPDATE users
-           SET available_balance = available_balance - ?,
-               frozen_balance = frozen_balance + ?,
-               updated_at = NOW()
-           WHERE id = ? AND available_balance >= ?`,
-          [amount, amount, auth.user.id, amount]
-        )
-        if (!updateResult.affectedRows) {
-          throw new Error('insufficient_balance')
-        }
-
-        const [insertResult] = await connection.query(
-          `INSERT INTO withdrawals
-           (user_id, amount, fee, actual_amount, withdraw_type, account_info, status, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, 0, NOW(), NOW())`,
-          [auth.user.id, amount, withdrawalFee, actualAmount, withdrawType, encrypt(accountInfo)]
-        )
-
-        await connection.query(
-          `INSERT INTO audit_logs
-           (operator_type, operator_id, action, target_type, target_id, summary, detail, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, NOW())`,
-          [
-            'user',
-            auth.user.id,
-            'withdrawal_request',
-            'withdrawal',
-            insertResult.insertId,
-            '提交奖励结算申请',
-            JSON.stringify({
-              amount,
-              fee: withdrawalFee,
-              actual_amount: actualAmount,
-              withdraw_type: withdrawType
-            })
-          ]
-        )
-
-        return {
-          withdrawal_id: insertResult.insertId,
-          amount,
-          fee: withdrawalFee,
-          actual_amount: actualAmount
-        }
-      })
-
-      return res.json(success(result, '奖励结算申请已提交'))
+      return res.status(403).json(error(
+        ErrorCodes.FORBIDDEN || 403,
+        '小程序内暂不支持用户自行发起结算申请，请以平台活动规则和后台处理结果为准'
+      ))
     }
 
     return res.status(405).json(error(405, '请求方法不支持'))
   } catch (err) {
     console.error('Withdrawal error:', err)
-    if (err.message === 'user_not_found') {
-      return res.status(404).json(error(ErrorCodes.USER_NOT_FOUND, '用户不存在'))
-    }
-    if (err.message === 'insufficient_balance') {
-      return res.status(400).json(error(ErrorCodes.INSUFFICIENT_BALANCE, '可用积分不足'))
-    }
     return res.status(500).json(error(500, '服务器错误'))
   }
 }
