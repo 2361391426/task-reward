@@ -1,6 +1,6 @@
 import { defineConfig } from 'vite'
 import uniPlugin from '@dcloudio/vite-plugin-uni'
-import { copyFileSync, existsSync, mkdirSync, readdirSync } from 'fs'
+import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'fs'
 import { dirname, relative, resolve } from 'path'
 import { fileURLToPath } from 'url'
 
@@ -55,17 +55,48 @@ const resolveMiniappStaticDir = () => {
     : resolve(__dirname, 'dist/dev/mp-weixin/static')
 }
 
+const resolveMiniappOutputDir = () => {
+  if (process.env.UNI_PLATFORM !== 'mp-weixin') {
+    return ''
+  }
+
+  if (process.env.UNI_OUTPUT_DIR) {
+    return resolve(__dirname, process.env.UNI_OUTPUT_DIR)
+  }
+
+  return process.env.NODE_ENV === 'production'
+    ? resolve(__dirname, 'dist/build/mp-weixin')
+    : resolve(__dirname, 'dist/dev/mp-weixin')
+}
+
+const normalizeMiniappProjectConfig = (outputDir) => {
+  const configPath = resolve(outputDir, 'project.config.json')
+  if (!existsSync(configPath)) {
+    return
+  }
+
+  const config = JSON.parse(readFileSync(configPath, 'utf8'))
+  delete config.miniprogramRoot
+  delete config.srcMiniprogramRoot
+  config.description = '诺斯马丁小程序构建产物'
+  writeFileSync(configPath, `${JSON.stringify(config, null, 2)}\n`, 'utf8')
+  console.log(`已修正构建产物项目配置: ${relative(__dirname, configPath)}`)
+}
+
 export default defineConfig({
   plugins: [
     uni(),
     {
       name: 'copy-miniapp-static-assets',
       closeBundle() {
-        const targetDir = resolveMiniappStaticDir()
-        if (!targetDir) {
+        const outputDir = resolveMiniappOutputDir()
+        if (!outputDir) {
           return
         }
 
+        normalizeMiniappProjectConfig(outputDir)
+
+        const targetDir = resolve(outputDir, 'static')
         const assetDirs = ['tabbar', 'images']
         assetDirs.forEach((assetDir) => {
           const sourceDir = resolve(__dirname, 'static', assetDir)
