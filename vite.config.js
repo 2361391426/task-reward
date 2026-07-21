@@ -41,35 +41,44 @@ const countFiles = (dir) => {
   }, 0)
 }
 
+const resolveMiniappStaticDir = () => {
+  if (process.env.UNI_PLATFORM !== 'mp-weixin') {
+    return ''
+  }
+
+  if (process.env.UNI_OUTPUT_DIR) {
+    return resolve(__dirname, process.env.UNI_OUTPUT_DIR, 'static')
+  }
+
+  return process.env.NODE_ENV === 'production'
+    ? resolve(__dirname, 'dist/build/mp-weixin/static')
+    : resolve(__dirname, 'dist/dev/mp-weixin/static')
+}
+
 export default defineConfig({
   plugins: [
     uni(),
     {
       name: 'copy-miniapp-static-assets',
       closeBundle() {
-        const targetDirs = [
-          resolve(__dirname, 'dist/dev/mp-weixin/static'),
-          resolve(__dirname, 'dist/build/mp-weixin/static')
-        ]
+        const targetDir = resolveMiniappStaticDir()
+        if (!targetDir) {
+          return
+        }
+
         const assetDirs = ['tabbar', 'images']
+        assetDirs.forEach((assetDir) => {
+          const sourceDir = resolve(__dirname, 'static', assetDir)
+          const outputDir = resolve(targetDir, assetDir)
+          copyDirectory(sourceDir, outputDir)
 
-        targetDirs.forEach((targetDir) => {
-          assetDirs.forEach((assetDir) => {
-            const sourceDir = resolve(__dirname, 'static', assetDir)
-            const outputDir = resolve(targetDir, assetDir)
-            copyDirectory(sourceDir, outputDir)
-
-            console.log(
-              `已同步小程序静态资源: ${assetDir} -> ${relative(__dirname, outputDir)} (${countFiles(outputDir)} 个文件)`
-            )
-          })
+          console.log(
+            `已同步小程序静态资源: ${assetDir} -> ${relative(__dirname, outputDir)} (${countFiles(outputDir)} 个文件)`
+          )
         })
       }
     }
   ],
-  build: {
-    outDir: 'dist/dev/mp-weixin'
-  },
   server: {
     port: 3000,
     open: false
