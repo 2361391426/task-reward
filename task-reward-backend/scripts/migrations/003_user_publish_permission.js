@@ -16,6 +16,7 @@ const ensureColumn = async (connection, tableName, columnName, definition) => {
 
 module.exports = {
   name: '003_user_publish_permission',
+  mysqlOnly: true,
   up: async (connection) => {
     await ensureColumn(
       connection,

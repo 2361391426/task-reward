@@ -49,6 +49,11 @@ async function main() {
         continue
       }
 
+      if (migration.mysqlOnly) {
+        console.log(`Skip MySQL-only migration in Neon mode: ${migration.name}`)
+        continue
+      }
+
       if (applied.has(migration.name)) {
         continue
       }

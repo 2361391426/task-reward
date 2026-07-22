@@ -32,6 +32,7 @@ const ensureIndex = async (connection, tableName, indexName, definitionSql) => {
 
 module.exports = {
   name: '002_merchant_staffs_and_task_notify',
+  mysqlOnly: true,
   up: async (connection) => {
     await connection.query(
       `CREATE TABLE IF NOT EXISTS merchant_staffs (

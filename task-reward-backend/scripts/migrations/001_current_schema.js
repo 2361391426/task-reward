@@ -30,8 +30,24 @@ const ensureIndex = async (connection, tableName, indexName, definitionSql) => {
   }
 }
 
+const ensureTable = async (connection, tableName, createSql) => {
+  const [rows] = await connection.query(
+    `SELECT 1
+     FROM information_schema.TABLES
+     WHERE TABLE_SCHEMA = DATABASE()
+       AND TABLE_NAME = ?
+     LIMIT 1`,
+    [tableName]
+  )
+
+  if (rows.length === 0) {
+    await connection.query(createSql)
+  }
+}
+
 module.exports = {
   name: '001_current_schema',
+  mysqlOnly: true,
   up: async (connection) => {
     await ensureColumn(connection, 'users', 'unionid', '`unionid` VARCHAR(64) DEFAULT NULL COMMENT \'WeChat unionid\'')
     await ensureColumn(connection, 'users', 'avatar', '`avatar` VARCHAR(255) DEFAULT NULL COMMENT \'Avatar URL\'')
@@ -89,30 +105,30 @@ module.exports = {
     await ensureIndex(connection, 'submissions', 'idx_task_status_created_at', 'INDEX `idx_task_status_created_at` (`task_id`, `status`, `created_at`)')
     await ensureIndex(connection, 'submissions', 'idx_user_status_created_at', 'INDEX `idx_user_status_created_at` (`user_id`, `status`, `created_at`)')
 
-    await ensureTable(connection, 'feedbacks', `
-      CREATE TABLE IF NOT EXISTS feedbacks (
-        id BIGINT PRIMARY KEY AUTO_INCREMENT,
-        user_id BIGINT NOT NULL COMMENT 'User ID',
-        user_nickname VARCHAR(100) DEFAULT NULL COMMENT 'User nickname',
-        user_avatar VARCHAR(255) DEFAULT NULL COMMENT 'User avatar',
-        category VARCHAR(50) NOT NULL DEFAULT 'general' COMMENT 'Feedback category',
-        content TEXT NOT NULL COMMENT 'Feedback content',
-        contact_info VARCHAR(200) DEFAULT NULL COMMENT 'Contact info',
-        attachments JSON DEFAULT NULL COMMENT 'Attachment list',
-        task_id BIGINT DEFAULT NULL COMMENT 'Related task ID',
-        status TINYINT NOT NULL DEFAULT 0 COMMENT '0 pending, 1 replied, 2 closed',
-        reply_content TEXT DEFAULT NULL COMMENT 'Merchant reply',
-        reply_user_type VARCHAR(20) DEFAULT NULL COMMENT 'Reply user type',
-        reply_user_id BIGINT DEFAULT NULL COMMENT 'Reply user ID',
-        reply_user_name VARCHAR(100) DEFAULT NULL COMMENT 'Reply user name',
-        replied_at TIMESTAMP NULL DEFAULT NULL COMMENT 'Replied time',
-        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-        INDEX `idx_user_id` (`user_id`),
-        INDEX `idx_status` (`status`),
-        INDEX `idx_created_at` (`created_at`),
-        INDEX `idx_task_id` (`task_id`)
-      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='User feedbacks'
-    `)
+    await ensureTable(connection, 'feedbacks', [
+      'CREATE TABLE IF NOT EXISTS feedbacks (',
+      'id BIGINT PRIMARY KEY AUTO_INCREMENT,',
+      'user_id BIGINT NOT NULL COMMENT \'User ID\',',
+      'user_nickname VARCHAR(100) DEFAULT NULL COMMENT \'User nickname\',',
+      'user_avatar VARCHAR(255) DEFAULT NULL COMMENT \'User avatar\',',
+      'category VARCHAR(50) NOT NULL DEFAULT \'general\' COMMENT \'Feedback category\',',
+      'content TEXT NOT NULL COMMENT \'Feedback content\',',
+      'contact_info VARCHAR(200) DEFAULT NULL COMMENT \'Contact info\',',
+      'attachments JSON DEFAULT NULL COMMENT \'Attachment list\',',
+      'task_id BIGINT DEFAULT NULL COMMENT \'Related task ID\',',
+      'status TINYINT NOT NULL DEFAULT 0 COMMENT \'0 pending, 1 replied, 2 closed\',',
+      'reply_content TEXT DEFAULT NULL COMMENT \'Merchant reply\',',
+      'reply_user_type VARCHAR(20) DEFAULT NULL COMMENT \'Reply user type\',',
+      'reply_user_id BIGINT DEFAULT NULL COMMENT \'Reply user ID\',',
+      'reply_user_name VARCHAR(100) DEFAULT NULL COMMENT \'Reply user name\',',
+      'replied_at TIMESTAMP NULL DEFAULT NULL COMMENT \'Replied time\',',
+      'created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,',
+      'updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,',
+      'INDEX `idx_user_id` (`user_id`),',
+      'INDEX `idx_status` (`status`),',
+      'INDEX `idx_created_at` (`created_at`),',
+      'INDEX `idx_task_id` (`task_id`)',
+      ') ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT=\'User feedbacks\''
+    ].join('\n'))
   }
 }
