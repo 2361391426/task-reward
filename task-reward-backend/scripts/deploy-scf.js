@@ -177,16 +177,8 @@ const callWithUpdatingRetry = async (action, params, label, options = {}) => {
 
 const main = async () => {
   try {
-    const configResult = await callWithUpdatingRetry('UpdateFunctionConfiguration', {
-      FunctionName: functionName,
-      Namespace: namespace,
-      Timeout: timeout
-    }, '腾讯云函数配置更新', { retries: 6, delayMs: 10000 })
-
-    console.log(`腾讯云函数超时时间已设置为 ${timeout} 秒`)
-    console.log(`配置请求编号：${configResult.Response && configResult.Response.RequestId ? configResult.Response.RequestId : '-'}`)
-
-    await sleep(10000)
+    console.log(`开始发布腾讯云函数代码：${functionName}`)
+    console.log(`地域：${region}，命名空间：${namespace}，处理器：${handler}`)
 
     const codeResult = await callWithUpdatingRetry('UpdateFunctionCode', {
       FunctionName: functionName,
@@ -195,7 +187,7 @@ const main = async () => {
       CodeSource: 'ZipFile',
       ZipFile: zipFile,
       Publish: 'TRUE'
-    }, '腾讯云函数代码发布', { retries: 10, delayMs: 15000 })
+    }, '腾讯云函数代码发布', { retries: 20, delayMs: 15000 })
 
     console.log(`腾讯云函数发布成功：${functionName}`)
     console.log(`地域：${region}，命名空间：${namespace}`)
