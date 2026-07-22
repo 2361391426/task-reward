@@ -30,7 +30,41 @@ if (!(Test-Path -LiteralPath $esbuildBin)) {
 
 $bundlePath = Join-Path $stageDir 'scf-server.js'
 $bannerContent = @'
+const __taskRewardModule = require("module");
 const __taskRewardCrypto = require("crypto");
+const __taskRewardFs = require("fs");
+const __taskRewardStream = require("stream");
+const __taskRewardUtil = require("util");
+const __taskRewardLoad = __taskRewardModule._load;
+__taskRewardModule._load = function patchedTaskRewardLoad(request, parent, isMain) {
+  if (typeof request === "string" && request.indexOf("node:") === 0) {
+    request = request.slice(5);
+  }
+  if (request === "fs/promises") {
+    return __taskRewardFs.promises;
+  }
+  if (request === "stream/promises") {
+    return {
+      pipeline: __taskRewardUtil.promisify(__taskRewardStream.pipeline),
+      finished: __taskRewardUtil.promisify(__taskRewardStream.finished)
+    };
+  }
+  if (request === "timers/promises") {
+    return {
+      setTimeout: function taskRewardDelay(ms, value) {
+        return new Promise(function(resolve) {
+          setTimeout(function() { resolve(value); }, ms);
+        });
+      },
+      setImmediate: function taskRewardImmediate(value) {
+        return new Promise(function(resolve) {
+          setImmediate(function() { resolve(value); });
+        });
+      }
+    };
+  }
+  return __taskRewardLoad.call(this, request, parent, isMain);
+};
 if (!__taskRewardCrypto.randomUUID) {
   __taskRewardCrypto.randomUUID = function randomUUID() {
     const bytes = __taskRewardCrypto.randomBytes(16);
