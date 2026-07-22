@@ -29,6 +29,15 @@ if (!(Test-Path -LiteralPath $esbuildBin)) {
 }
 
 $bundlePath = Join-Path $stageDir 'scf-server.js'
+$buildSha = 'local'
+try {
+    $gitSha = git -C $backendRoot rev-parse --short HEAD 2>$null
+    if ($LASTEXITCODE -eq 0 -and ![string]::IsNullOrWhiteSpace($gitSha)) {
+        $buildSha = $gitSha.Trim()
+    }
+} catch {
+    $buildSha = 'local'
+}
 $bannerContent = @'
 const __taskRewardModule = require("module");
 const __taskRewardCrypto = require("crypto");
@@ -75,6 +84,7 @@ if (!__taskRewardCrypto.randomUUID) {
   };
 }
 '@
+$buildBanner = "process.env.TASK_REWARD_BUILD_SHA = process.env.TASK_REWARD_BUILD_SHA || '$buildSha';`n"
 & $esbuildBin `
     (Join-Path $backendRoot 'scf-server.js') `
     --bundle `
@@ -88,7 +98,7 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 $bundleContent = [System.IO.File]::ReadAllText($bundlePath, [System.Text.Encoding]::UTF8)
-[System.IO.File]::WriteAllText($bundlePath, $bannerContent + "`n" + $bundleContent, [System.Text.Encoding]::UTF8)
+[System.IO.File]::WriteAllText($bundlePath, $buildBanner + $bannerContent + "`n" + $bundleContent, [System.Text.Encoding]::UTF8)
 
 $bootstrapPath = Join-Path $stageDir 'scf_bootstrap'
 $bootstrapContent = @(

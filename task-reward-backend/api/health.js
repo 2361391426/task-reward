@@ -20,6 +20,7 @@ module.exports = async (req, res) => {
     return res.json(success({
       service: 'task-reward-api',
       status: 'healthy',
+      build_sha: process.env.TASK_REWARD_BUILD_SHA || process.env.GITHUB_SHA || 'unknown',
       timestamp: new Date().toISOString()
     }))
   } catch (err) {
