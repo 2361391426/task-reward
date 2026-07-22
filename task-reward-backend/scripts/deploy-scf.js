@@ -28,12 +28,14 @@ const fail = (message) => {
   process.exit(1)
 }
 
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+
 if (!secretId || !secretKey) {
   fail('缺少腾讯云密钥，请在 GitHub Secrets 配置 TENCENT_SECRET_ID 和 TENCENT_SECRET_KEY。')
 }
 
 if (!secretId.startsWith('AKID')) {
-  console.warn('警告：TENCENT_SECRET_ID 通常以 AKID 开头，请确认填的是腾讯云访问密钥 SecretId，不是 Cloudflare、GitHub 或其他平台密钥。')
+  console.warn('警告：TENCENT_SECRET_ID 通常以 AKID 开头，请确认填的是腾讯云访问密钥 SecretId。')
 }
 
 if (!fs.existsSync(zipPath)) {
@@ -97,6 +99,15 @@ const createSignedOptions = (action, payload) => {
   }
 }
 
+class TencentCloudError extends Error {
+  constructor(label, code, message, requestId) {
+    super(`${label}失败：${code}\n${message}`)
+    this.name = 'TencentCloudError'
+    this.code = code
+    this.requestId = requestId
+  }
+}
+
 const callTencentCloud = (action, params, label) => {
   const payload = JSON.stringify(params)
   const requestOptions = createSignedOptions(action, payload)
@@ -116,7 +127,8 @@ const callTencentCloud = (action, params, label) => {
         }
 
         if (result.Response && result.Response.Error) {
-          reject(new Error(`${label}失败：${result.Response.Error.Code}\n${result.Response.Error.Message}`))
+          const err = result.Response.Error
+          reject(new TencentCloudError(label, err.Code, err.Message, result.Response.RequestId))
           return
         }
 
@@ -138,25 +150,52 @@ const callTencentCloud = (action, params, label) => {
   })
 }
 
+const isUpdatingError = (error) => {
+  const text = `${error.code || ''}\n${error.message || ''}`
+  return /Updating|更新|UpdateFunctionCode|FailedOperation/i.test(text)
+}
+
+const callWithUpdatingRetry = async (action, params, label, options = {}) => {
+  const retries = options.retries || 10
+  const delayMs = options.delayMs || 15000
+
+  for (let attempt = 1; attempt <= retries; attempt += 1) {
+    try {
+      return await callTencentCloud(action, params, label)
+    } catch (error) {
+      if (!isUpdatingError(error) || attempt === retries) {
+        throw error
+      }
+
+      console.log(`${label}暂不可执行，函数正在更新中。${delayMs / 1000} 秒后重试 ${attempt}/${retries - 1}。`)
+      await sleep(delayMs)
+    }
+  }
+
+  throw new Error(`${label}重试后仍失败`)
+}
+
 const main = async () => {
   try {
-    const configResult = await callTencentCloud('UpdateFunctionConfiguration', {
+    const configResult = await callWithUpdatingRetry('UpdateFunctionConfiguration', {
       FunctionName: functionName,
       Namespace: namespace,
       Timeout: timeout
-    }, '腾讯云函数配置更新')
+    }, '腾讯云函数配置更新', { retries: 6, delayMs: 10000 })
 
     console.log(`腾讯云函数超时时间已设置为 ${timeout} 秒`)
     console.log(`配置请求编号：${configResult.Response && configResult.Response.RequestId ? configResult.Response.RequestId : '-'}`)
 
-    const codeResult = await callTencentCloud('UpdateFunctionCode', {
+    await sleep(10000)
+
+    const codeResult = await callWithUpdatingRetry('UpdateFunctionCode', {
       FunctionName: functionName,
       Namespace: namespace,
       Handler: handler,
       CodeSource: 'ZipFile',
       ZipFile: zipFile,
       Publish: 'TRUE'
-    }, '腾讯云函数代码发布')
+    }, '腾讯云函数代码发布', { retries: 10, delayMs: 15000 })
 
     console.log(`腾讯云函数发布成功：${functionName}`)
     console.log(`地域：${region}，命名空间：${namespace}`)
