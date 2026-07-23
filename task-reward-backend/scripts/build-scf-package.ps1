@@ -103,8 +103,17 @@ $bundleContent = [System.IO.File]::ReadAllText($bundlePath, [System.Text.Encodin
 $bootstrapPath = Join-Path $stageDir 'scf_bootstrap'
 $bootstrapContent = @(
     '#!/bin/bash'
+    'set -eu'
     'export PORT=9000'
-    '/var/lang/node12/bin/node scf-server.js'
+    'if [ -x /var/lang/node18/bin/node ]; then'
+    '  NODE_BIN=/var/lang/node18/bin/node'
+    'elif [ -x /var/lang/node12/bin/node ]; then'
+    '  NODE_BIN=/var/lang/node12/bin/node'
+    'else'
+    '  echo "未找到腾讯云 Node.js 运行时" >&2'
+    '  exit 1'
+    'fi'
+    'exec "$NODE_BIN" scf-server.js'
 )
 [System.IO.File]::WriteAllText($bootstrapPath, ($bootstrapContent -join "`n") + "`n", [System.Text.Encoding]::ASCII)
 
