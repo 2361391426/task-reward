@@ -183,7 +183,6 @@ const main = async () => {
     const codeResult = await callWithUpdatingRetry('UpdateFunctionCode', {
       FunctionName: functionName,
       Namespace: namespace,
-      Handler: handler,
       CodeSource: 'ZipFile',
       ZipFile: zipFile,
       Publish: 'TRUE'
