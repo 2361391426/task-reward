@@ -192,11 +192,8 @@ jobs:
       - name: Post-deploy health check
         shell: powershell
         env:
-          API_BASE: ${{ secrets.PRODUCTION_API_BASE_URL }}
+          API_BASE: ${{ secrets.PRODUCTION_API_BASE_URL || 'https://1455441725-f1qvv2j2lt.ap-guangzhou.tencentscf.com/api' }}
           SMOKE_SKIP_AUTH: "true"
         run: |
-          if ([string]::IsNullOrWhiteSpace($env:API_BASE)) {
-            Write-Host "PRODUCTION_API_BASE_URL is not set. Skip post-deploy health check."
-            exit 0
-          }
+          Write-Host "Post-deploy health check: $env:API_BASE"
           npm run smoke
