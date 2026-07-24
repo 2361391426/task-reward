@@ -98,6 +98,7 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 $bundleContent = [System.IO.File]::ReadAllText($bundlePath, [System.Text.Encoding]::UTF8)
+$bundleContent = $bundleContent.Replace('require("fs/promises")', 'require("fs").promises')
 [System.IO.File]::WriteAllText($bundlePath, $buildBanner + $bannerContent + "`n" + $bundleContent, [System.Text.Encoding]::UTF8)
 
 $bootstrapPath = Join-Path $stageDir 'scf_bootstrap'
